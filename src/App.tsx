@@ -1,0 +1,75 @@
+import React from 'react';
+import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
+import { ThemeProvider } from './contexts/ThemeContext';
+import { AuthProvider } from './contexts/AuthContext';
+import Layout from './components/Layout/Layout';
+import Home from './pages/Home';
+import ProductList from './pages/ProductList';
+import ProductDetail from './pages/ProductDetail';
+import ReviewPage from './pages/ReviewPage';
+import RequestReview from './pages/RequestReview';
+import UserProfile from './pages/UserProfile';
+import AdminPanel from './pages/AdminPanel';
+import Login from './pages/Login';
+import Register from './pages/Register';
+import About from './pages/About';
+import Contact from './pages/Contact';
+
+// Wrapper component for ProductList to pass filters to Layout
+const ProductListWrapper = () => {
+  const [viewMode, setViewMode] = React.useState<'grid' | 'list'>('grid');
+  const [searchQuery, setSearchQuery] = React.useState('');
+  const [selectedCategory, setSelectedCategory] = React.useState('all');
+  const [sortBy, setSortBy] = React.useState('rating');
+
+  const productFilters = {
+    searchQuery,
+    setSearchQuery,
+    selectedCategory,
+    setSelectedCategory,
+    sortBy,
+    setSortBy,
+    viewMode,
+    setViewMode
+  };
+
+  return (
+    <Layout productFilters={productFilters}>
+      <ProductList 
+        searchQuery={searchQuery}
+        selectedCategory={selectedCategory}
+        sortBy={sortBy}
+        viewMode={viewMode}
+      />
+    </Layout>
+  );
+};
+function App() {
+  return (
+    <ThemeProvider>
+      <AuthProvider>
+        <Router>
+          <Routes>
+            <Route path="/login" element={<Login />} />
+            <Route path="/register" element={<Register />} />
+            <Route path="/*" element={
+              <Routes>
+                <Route path="/" element={<Layout><Home /></Layout>} />
+                <Route path="/products" element={<ProductListWrapper />} />
+                <Route path="/products/:id" element={<Layout><ProductDetail /></Layout>} />
+                <Route path="/review/:productId" element={<Layout><ReviewPage /></Layout>} />
+                <Route path="/request-review" element={<Layout><RequestReview /></Layout>} />
+                <Route path="/profile" element={<Layout><UserProfile /></Layout>} />
+                <Route path="/admin" element={<Layout><AdminPanel /></Layout>} />
+                <Route path="/about" element={<Layout><About /></Layout>} />
+                <Route path="/contact" element={<Layout><Contact /></Layout>} />
+              </Routes>
+            } />
+          </Routes>
+        </Router>
+      </AuthProvider>
+    </ThemeProvider>
+  );
+}
+
+export default App;
