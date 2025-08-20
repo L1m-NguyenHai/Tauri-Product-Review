@@ -1,0 +1,26 @@
+# Core FastAPI dependencies
+fastapi>=0.104.1
+uvicorn[standard]>=0.24.0
+
+# Database
+psycopg2-binary>=2.9.7
+
+# Authentication & Security
+python-jose[cryptography]>=3.3.0
+passlib[bcrypt]>=1.7.4
+python-multipart>=0.0.6
+
+# Data validation
+pydantic>=2.5.0
+pydantic[email]>=2.5.0
+
+# Environment variables
+python-dotenv>=1.0.0
+
+# Development dependencies (optional)
+pytest>=7.4.0
+pytest-asyncio>=0.21.0
+httpx>=0.25.0
+
+# Additional utilities
+python-dateutil>=2.8.2

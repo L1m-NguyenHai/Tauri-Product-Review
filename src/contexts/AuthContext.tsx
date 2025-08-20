@@ -1,4 +1,5 @@
 import React, { createContext, useContext, useState } from 'react';
+import axios from 'axios';
 
 interface User {
   id: string;
@@ -30,42 +31,69 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [user, setUser] = useState<User | null>(null);
 
   const login = async (email: string, password: string): Promise<boolean> => {
-    // Simulate API call
-    if (email === 'admin@example.com' && password === 'admin') {
-      setUser({
-        id: '1',
+    try {
+      // Authenticate and get the token
+      const loginResponse = await axios.post('http://127.0.0.1:8000/api/v1/auth/login', {
         email,
-        name: 'Admin User',
-        avatar: 'https://images.pexels.com/photos/774909/pexels-photo-774909.jpeg?auto=compress&cs=tinysrgb&w=64&h=64&dpr=2',
-        role: 'admin'
+        password,
       });
-      return true;
-    } else if (email.includes('@') && password.length >= 6) {
+
+      const { access_token, token_type } = loginResponse.data;
+
+      // Use the token to fetch user details
+      const userResponse = await axios.get('http://127.0.0.1:8000/api/v1/auth/me', {
+        headers: {
+          Authorization: `${token_type} ${access_token}`,
+        },
+      });
+
+      const userData = userResponse.data;
+
+      // Update the user state with the fetched details
       setUser({
-        id: '2',
-        email,
-        name: email.split('@')[0],
-        avatar: 'https://images.pexels.com/photos/1040880/pexels-photo-1040880.jpeg?auto=compress&cs=tinysrgb&w=64&h=64&dpr=2',
-        role: 'user'
+        id: userData.id,
+        email: userData.email,
+        name: userData.name,
+        avatar: userData.avatar,
+        role: userData.role,
       });
+
+      // Optionally store the token in localStorage or cookies
+      localStorage.setItem('access_token', access_token);
+      localStorage.setItem('token_type', token_type);
+
       return true;
+    } catch (error) {
+      console.error('Login failed:', error);
+      return false;
     }
-    return false;
   };
 
   const register = async (name: string, email: string, password: string): Promise<boolean> => {
-    // Simulate API call
-    if (name && email.includes('@') && password.length >= 6) {
-      setUser({
-        id: Date.now().toString(),
-        email,
+    try {
+      // Send registration details to the backend
+      const response = await axios.post('http://127.0.0.1:8000/api/v1/auth/register', {
         name,
-        avatar: 'https://images.pexels.com/photos/1040880/pexels-photo-1040880.jpeg?auto=compress&cs=tinysrgb&w=64&h=64&dpr=2',
-        role: 'user'
+        email,
+        password,
       });
+
+      const userData = response.data;
+
+      // Update the user state with the registered user's details
+      setUser({
+        id: userData.id,
+        email: userData.email,
+        name: userData.name,
+        avatar: userData.avatar,
+        role: userData.role,
+      });
+
       return true;
+    } catch (error) {
+      console.error('Registration failed:', error);
+      return false;
     }
-    return false;
   };
 
   const logout = () => {
