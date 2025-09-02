@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { NavLink, Link, useLocation } from 'react-router-dom';
 import { 
   Home, 
@@ -15,6 +15,7 @@ import {
   Grid,
   List
 } from 'lucide-react';
+import axios from 'axios';
 import { useTheme } from '../../contexts/ThemeContext';
 import { useAuth } from '../../contexts/AuthContext';
 
@@ -37,6 +38,30 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, productFilters }) => {
   const { user, isAdmin } = useAuth();
   const location = useLocation();
   const isProductsPage = location.pathname === '/products';
+  const [categories, setCategories] = useState<{id: string, name: string}[]>([
+    {id: 'all', name: 'All Categories'}
+  ]);
+
+  useEffect(() => {
+    const fetchCategories = async () => {
+      try {
+        const response = await axios.get('http://127.0.0.1:8000/api/v1/categories/');
+        if (response.data && Array.isArray(response.data)) {
+          setCategories([
+            {id: 'all', name: 'All Categories'},
+            ...response.data.map((category: any) => ({
+              id: category.id,
+              name: category.name
+            }))
+          ]);
+        }
+      } catch (error) {
+        console.error('Error fetching categories:', error);
+      }
+    };
+
+    fetchCategories();
+  }, []);
 
   const navItems = [
     { to: '/', icon: Home, label: 'Home' },
@@ -54,17 +79,6 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, productFilters }) => {
   const footerItems = [
     { to: '/about', icon: Info, label: 'About' },
     { to: '/contact', icon: Phone, label: 'Contact' },
-  ];
-
-  const categories = [
-    'all',
-    'smartphones',
-    'laptops',
-    'tablets',
-    'audio',
-    'cameras',
-    'gaming',
-    'wearables'
   ];
   const NavItem = ({ to, icon: Icon, label }: { to: string; icon: any; label: string }) => (
     <NavLink
@@ -180,8 +194,8 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, productFilters }) => {
                 } focus:ring-2 focus:ring-orange-500 focus:outline-none`}
               >
                 {categories.map(category => (
-                  <option key={category} value={category}>
-                    {category === 'all' ? 'All Categories' : category.charAt(0).toUpperCase() + category.slice(1)}
+                  <option key={category.id} value={category.id}>
+                    {category.name}
                   </option>
                 ))}
               </select>
@@ -203,9 +217,9 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, productFilters }) => {
                     : 'bg-gray-100 text-gray-900'
                 } focus:ring-2 focus:ring-orange-500 focus:outline-none`}
               >
-                <option value="rating">Sort by Rating</option>
+                <option value="average_rating">Sort by Rating</option>
                 <option value="price">Sort by Price</option>
-                <option value="reviews">Sort by Reviews</option>
+                <option value="review_count">Sort by Reviews</option>
                 <option value="name">Sort by Name</option>
               </select>
             </div>

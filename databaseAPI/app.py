@@ -7,6 +7,7 @@ from fastapi.openapi.utils import get_openapi
 import time
 import logging
 from database.connection import init_pool, close_pool
+from discord_media import start_discord_bot
 
 # Import all routers
 from routes.auth import router as auth_router
@@ -48,10 +49,10 @@ app = FastAPI(
     * **User**: Can create reviews, follow other users, submit review requests
     * **Admin**: Full access to all endpoints including user management and system administration
     """,
-    version="1.0.0",
+    version="1.0.1",
     contact={
         "name": "API Support",
-        "email": "support@productreview.com",
+        "email": "nhailtvop@gmail.com",
     },
     license_info={
         "name": "MIT",
@@ -134,8 +135,11 @@ async def startup_event():
     try:
         init_pool()
         logger.info("Database connection pool initialized successfully")
+        # Start Discord bot for media upload
+        start_discord_bot()
+        logger.info("Discord bot started successfully")
     except Exception as e:
-        logger.error(f"Failed to initialize database: {e}")
+        logger.error(f"Failed to initialize database or Discord bot: {e}")
         raise
 
 @app.on_event("shutdown")

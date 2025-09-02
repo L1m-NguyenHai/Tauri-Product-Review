@@ -13,10 +13,11 @@
     "windows": [
       {
         "title": "LimReview",
-        "width": 1140,
-        "height": 700,
+        "width": 1200,
+        "height": 860,
         "resizable": true,
-        "fullscreen": false
+        "fullscreen": false,
+        "decorations": true
       }
     ],
     "security": {

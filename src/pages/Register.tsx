@@ -35,11 +35,14 @@ const Register: React.FC = () => {
     setLoading(true);
 
     try {
-      await register(name, email, password);
-      navigate('/');
-    } catch (err: any) {
-      console.error('Registration error:', err);
-      setError(err.message || 'Registration failed. Please try again.');
+      const success = await register(name, email, password);
+      if (success) {
+        navigate('/');
+      } else {
+        setError('Registration failed. Please try again.');
+      }
+    } catch (err) {
+      setError('An error occurred during registration');
     } finally {
       setLoading(false);
     }

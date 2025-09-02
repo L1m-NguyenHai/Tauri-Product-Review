@@ -202,16 +202,15 @@ def get_product(product_id: str):
 
 @router.post("/", response_model=ProductResponse)
 def create_product(
-    product: ProductCreate,
-    current_admin: dict = Depends(get_current_admin_user)
+    product: ProductCreate
 ):
-    """Create new product (admin only)"""
+    """Create new product (no admin required)"""
     conn = get_conn()
     try:
         with conn.cursor(cursor_factory=RealDictCursor) as cur:
             # Verify category exists if provided
             if product.category_id:
-                cur.execute("SELECT id FROM categories WHERE id = %s", (product.category_id,))
+                cur.execute("SELECT id FROM categories WHERE id = %s", (str(product.category_id),))
                 if not cur.fetchone():
                     raise HTTPException(
                         status_code=status.HTTP_400_BAD_REQUEST,
@@ -229,7 +228,7 @@ def create_product(
                 VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 RETURNING *
             """, (
-                product_id, product.name, product.description, product.category_id,
+                product_id, product.name, product.description, str(product.category_id) if product.category_id else None,
                 product.manufacturer, product.price, product.original_price,
                 product.product_url, product.availability, product.status, product.image
             ))
@@ -428,10 +427,9 @@ def delete_product_feature(
 @router.post("/{product_id}/images", response_model=ProductImageResponse)
 def add_product_image(
     product_id: str,
-    image: ProductImageCreate,
-    current_admin: dict = Depends(get_current_admin_user)
+    image: ProductImageCreate
 ):
-    """Add image to product (admin only)"""
+    """Add image to product (no admin required)"""
     conn = get_conn()
     try:
         with conn.cursor(cursor_factory=RealDictCursor) as cur:

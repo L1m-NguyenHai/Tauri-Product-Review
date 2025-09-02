@@ -1,4 +1,4 @@
-from fastapi import APIRouter, HTTPException, status, Depends, Query
+from fastapi import APIRouter, HTTPException, status, Depends, Query, UploadFile, File, Form
 from typing import List, Optional
 from models.schemas import (
     ReviewCreate, ReviewUpdate, ReviewResponse, ReviewFilter,
@@ -12,6 +12,8 @@ from database.connection import get_conn, put_conn
 from psycopg2.extras import RealDictCursor
 import logging
 import uuid
+import tempfile
+import os
 
 logger = logging.getLogger("uvicorn.error")
 
@@ -164,7 +166,7 @@ def create_review(
     try:
         with conn.cursor(cursor_factory=RealDictCursor) as cur:
             # Check if product exists
-            cur.execute("SELECT id FROM products WHERE id = %s", (review.product_id,))
+            cur.execute("SELECT id FROM products WHERE id = %s", (str(review.product_id),))
             if not cur.fetchone():
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
@@ -175,7 +177,7 @@ def create_review(
             cur.execute("""
                 SELECT id FROM reviews 
                 WHERE user_id = %s AND product_id = %s
-            """, (current_user["id"], review.product_id))
+            """, (str(current_user["id"]), str(review.product_id)))
             
             if cur.fetchone():
                 raise HTTPException(
@@ -192,7 +194,7 @@ def create_review(
                 VALUES (%s, %s, %s, %s, %s, %s, %s)
                 RETURNING *
             """, (
-                review_id, current_user["id"], review.product_id,
+                review_id, str(current_user["id"]), str(review.product_id),
                 review.rating, review.title, review.content, "pending"
             ))
             
@@ -434,47 +436,120 @@ def add_review_con(
 
 # Review Media
 @router.post("/{review_id}/media", response_model=ReviewMediaResponse)
-def add_review_media(
+async def add_review_media(
     review_id: str,
     media: ReviewMediaCreate,
     current_user: dict = Depends(get_current_user)
 ):
-    """Add media to review"""
+    """Add media to review (JSON with media_url)"""
+    import re
     conn = get_conn()
     try:
         with conn.cursor(cursor_factory=RealDictCursor) as cur:
             # Check review ownership
             cur.execute("SELECT user_id FROM reviews WHERE id = %s", (review_id,))
             review = cur.fetchone()
-            
             if not review:
                 raise HTTPException(
                     status_code=status.HTTP_404_NOT_FOUND,
                     detail="Review not found"
                 )
-            
+            if str(review["user_id"]) != str(current_user["id"]) and current_user["role"] != "admin":
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Not authorized to modify this review"
+                )
+            # Nếu media.media_url không phải là URL, upload lên Discord
+            url_pattern = re.compile(r"^https?://")
+            media_url = media.media_url
+            if not url_pattern.match(media_url):
+                # Upload file lên Discord, lấy URL trả về
+                from discord_media import upload_media
+                media_url = await upload_media(media_url)
+            media_id = str(uuid.uuid4())
+            cur.execute("""
+                INSERT INTO review_media (id, review_id, media_url, media_type, sort_order)
+                VALUES (%s, %s, %s, %s, %s)
+                RETURNING *
+            """, (media_id, review_id, media_url, media.media_type, media.sort_order))
+            new_media = cur.fetchone()
+            conn.commit()
+            return new_media
+    except HTTPException:
+        raise
+    except Exception as e:
+        conn.rollback()
+        logger.exception("Error adding review media: %s", e)
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        put_conn(conn)
+
+@router.post("/{review_id}/media/upload", response_model=ReviewMediaResponse)
+async def upload_review_media(
+    review_id: str,
+    file: UploadFile = File(...),
+    media_type: str = Form(...),
+    sort_order: int = Form(0),
+    current_user: dict = Depends(get_current_user)
+):
+    """Upload media file to review (via Discord bot)"""
+    from discord_media import discord_client
+    conn = get_conn()
+    try:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            # Check review ownership
+            cur.execute("SELECT user_id FROM reviews WHERE id = %s", (review_id,))
+            review = cur.fetchone()
+            if not review:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="Review not found"
+                )
             if str(review["user_id"]) != str(current_user["id"]) and current_user["role"] != "admin":
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN,
                     detail="Not authorized to modify this review"
                 )
             
-            media_id = str(uuid.uuid4())
-            cur.execute("""
-                INSERT INTO review_media (id, review_id, media_url, media_type, sort_order)
-                VALUES (%s, %s, %s, %s, %s)
-                RETURNING *
-            """, (media_id, review_id, media.media_url, media.media_type, media.sort_order))
+            # Validate file type
+            if not (media_type.startswith('image/') or media_type.startswith('video/')):
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Only image and video files are allowed"
+                )
             
-            new_media = cur.fetchone()
-            conn.commit()
-            return new_media
+            # Save file temporarily
+            with tempfile.NamedTemporaryFile(delete=False, suffix=f"_{file.filename}") as temp_file:
+                content = await file.read()
+                temp_file.write(content)
+                temp_file_path = temp_file.name
             
+            try:
+                # Upload to Discord and get URL
+                from discord_media import upload_media
+                media_url = await upload_media(temp_file_path)
+                
+                # Save to database
+                media_id = str(uuid.uuid4())
+                cur.execute("""
+                    INSERT INTO review_media (id, review_id, media_url, media_type, sort_order)
+                    VALUES (%s, %s, %s, %s, %s)
+                    RETURNING *
+                """, (media_id, review_id, media_url, media_type, sort_order))
+                new_media = cur.fetchone()
+                conn.commit()
+                return new_media
+                
+            finally:
+                # Clean up temporary file
+                if os.path.exists(temp_file_path):
+                    os.unlink(temp_file_path)
+                    
     except HTTPException:
         raise
     except Exception as e:
         conn.rollback()
-        logger.exception("Error adding review media: %s", e)
+        logger.exception("Error uploading review media: %s", e)
         raise HTTPException(status_code=500, detail=str(e))
     finally:
         put_conn(conn)
@@ -661,6 +736,171 @@ def reject_review(
     except Exception as e:
         conn.rollback()
         logger.exception("Error rejecting review: %s", e)
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        put_conn(conn)
+
+# Review Comments
+@router.get("/{review_id}/comments", response_model=List[dict])
+def list_review_comments(
+    review_id: str,
+    limit: int = Query(20, ge=1, le=100),
+    offset: int = Query(0, ge=0),
+    status: str = Query("visible")
+):
+    """List comments for a review"""
+    conn = get_conn()
+    try:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            cur.execute(
+                """
+                SELECT 
+                    c.*, 
+                    u.name as user_name, 
+                    u.avatar as user_avatar
+                FROM review_comments c
+                JOIN users u ON c.user_id = u.id
+                WHERE c.review_id = %s AND c.status = %s
+                ORDER BY c.created_at DESC
+                LIMIT %s OFFSET %s
+                """,
+                (review_id, status, limit, offset)
+            )
+            comments = cur.fetchall()
+            return comments
+    except Exception as e:
+        logger.exception("Error listing review comments: %s", e)
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        put_conn(conn)
+
+@router.post("/{review_id}/comments", response_model=dict)
+def create_review_comment(
+    review_id: str,
+    comment: dict,
+    current_user: dict = Depends(get_current_user)
+):
+    """Create a comment for a review"""
+    conn = get_conn()
+    try:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            comment_id = str(uuid.uuid4())
+            cur.execute(
+                """
+                INSERT INTO review_comments (
+                    id, review_id, user_id, parent_id, content, status
+                )
+                VALUES (%s, %s, %s, %s, %s, %s)
+                RETURNING *
+                """,
+                (
+                    comment_id, review_id, current_user["id"],
+                    comment.get("parent_id"), comment["content"], "visible"
+                )
+            )
+            new_comment = cur.fetchone()
+            conn.commit()
+            return new_comment
+    except Exception as e:
+        conn.rollback()
+        logger.exception("Error creating review comment: %s", e)
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        put_conn(conn)
+
+@router.put("/comments/{comment_id}", response_model=dict)
+def update_review_comment(
+    comment_id: str,
+    comment_update: dict,
+    current_user: dict = Depends(get_current_user)
+):
+    """Update a comment (owner or admin only)"""
+    conn = get_conn()
+    try:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            cur.execute("SELECT * FROM review_comments WHERE id = %s", (comment_id,))
+            existing_comment = cur.fetchone()
+
+            if not existing_comment:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="Comment not found"
+                )
+
+            if (
+                str(existing_comment["user_id"]) != str(current_user["id"])
+                and current_user["role"] != "admin"
+            ):
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Not authorized to update this comment"
+                )
+
+            update_fields = []
+            values = []
+
+            for field, value in comment_update.items():
+                if value is not None:
+                    update_fields.append(f"{field} = %s")
+                    values.append(value)
+
+            if not update_fields:
+                return existing_comment
+
+            update_fields.append("updated_at = CURRENT_TIMESTAMP")
+            values.append(comment_id)
+
+            query = f"""
+                UPDATE review_comments
+                SET {', '.join(update_fields)}
+                WHERE id = %s
+                RETURNING *
+            """
+
+            cur.execute(query, values)
+            updated_comment = cur.fetchone()
+            conn.commit()
+            return updated_comment
+    except Exception as e:
+        conn.rollback()
+        logger.exception("Error updating review comment: %s", e)
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        put_conn(conn)
+
+@router.delete("/comments/{comment_id}")
+def delete_review_comment(
+    comment_id: str,
+    current_user: dict = Depends(get_current_user)
+):
+    """Delete a comment (owner or admin only)"""
+    conn = get_conn()
+    try:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            cur.execute("SELECT * FROM review_comments WHERE id = %s", (comment_id,))
+            existing_comment = cur.fetchone()
+
+            if not existing_comment:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="Comment not found"
+                )
+
+            if (
+                str(existing_comment["user_id"]) != str(current_user["id"])
+                and current_user["role"] != "admin"
+            ):
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Not authorized to delete this comment"
+                )
+
+            cur.execute("DELETE FROM review_comments WHERE id = %s", (comment_id,))
+            conn.commit()
+            return {"message": "Comment deleted successfully"}
+    except Exception as e:
+        conn.rollback()
+        logger.exception("Error deleting review comment: %s", e)
         raise HTTPException(status_code=500, detail=str(e))
     finally:
         put_conn(conn)
