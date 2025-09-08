@@ -28,7 +28,7 @@ const AdminPanel: React.FC = () => {
   const recentReviews = [
     {
       id: '1',
-      user: 'John Doe',
+      user: 'HuyNe hehe',
       product: 'iPhone 15 Pro',
       rating: 5,
       status: 'published',
