@@ -121,7 +121,7 @@ const ReviewModal: React.FC<ReviewModalProps> = ({ isOpen, onClose, product, onS
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-      <div className={`w-full max-w-2xl max-h-[90vh] rounded-xl shadow-2xl overflow-hidden ${
+      <div className={`w-full max-w-2xl h-[90vh] flex flex-col rounded-xl shadow-2xl overflow-hidden ${
         isDark ? 'bg-gray-800' : 'bg-white'
       }`}>
         {/* Header */}
@@ -203,8 +203,8 @@ const ReviewModal: React.FC<ReviewModalProps> = ({ isOpen, onClose, product, onS
           </div>
         </div>
 
-        {/* Content */}
-        <div className="p-6 overflow-y-auto max-h-[60vh]">
+  {/* Content */}
+  <div className="flex-1 p-6 overflow-y-auto">
           {/* Step 1: Rating, Title, Content */}
           {currentStep === 1 && (
             <div className="space-y-6">
@@ -411,7 +411,9 @@ const ReviewModal: React.FC<ReviewModalProps> = ({ isOpen, onClose, product, onS
                   }`}>
                     Selected files: {mediaFiles.length}
                   </p>
-                  <div className="space-y-1">
+                  <div className="space-y-1"
+                  style={{ maxHeight: 120 }}
+                  >
                     {mediaFiles.map((file, index) => (
                       <div key={index} className={`text-xs ${
                         isDark ? 'text-gray-400' : 'text-gray-600'
@@ -427,7 +429,7 @@ const ReviewModal: React.FC<ReviewModalProps> = ({ isOpen, onClose, product, onS
         </div>
 
         {/* Footer */}
-        <div className={`p-6 border-t ${
+        <div className={`p-6 border-t shrink-0 ${
           isDark ? 'border-gray-700' : 'border-gray-200'
         }`}>
           <div className="flex justify-between">
