@@ -110,7 +110,7 @@ def create_review_request(
         with conn.cursor(cursor_factory=RealDictCursor) as cur:
             # Verify category exists if provided
             if request.category_id:
-                cur.execute("SELECT id FROM categories WHERE id = %s", (request.category_id,))
+                cur.execute("SELECT id FROM categories WHERE id = %s", (str(request.category_id),))
                 if not cur.fetchone():
                     raise HTTPException(
                         status_code=status.HTTP_400_BAD_REQUEST,
@@ -128,8 +128,8 @@ def create_review_request(
                 VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 RETURNING *
             """, (
-                request_id, current_user["id"], request.product_name,
-                request.manufacturer, request.category_id, request.product_url,
+                request_id, str(current_user["id"]), request.product_name,
+                request.manufacturer, str(request.category_id) if request.category_id else None, request.product_url,
                 request.price, request.availability, request.description,
                 request.reasoning, request.contact_email, "pending"
             ))
@@ -147,7 +147,7 @@ def create_review_request(
                 JOIN users u ON rr.user_id = u.id
                 LEFT JOIN categories c ON rr.category_id = c.id
                 WHERE rr.id = %s
-            """, (request_id,))
+            """, (str(request_id),))
             
             return cur.fetchone()
             
@@ -171,7 +171,7 @@ def update_review_request(
     try:
         with conn.cursor(cursor_factory=RealDictCursor) as cur:
             # Get existing request
-            cur.execute("SELECT * FROM review_requests WHERE id = %s", (request_id,))
+            cur.execute("SELECT * FROM review_requests WHERE id = %s", (str(request_id),))
             existing_request = cur.fetchone()
             
             if not existing_request:
@@ -196,7 +196,7 @@ def update_review_request(
             
             # Verify category exists if provided
             if request_update.category_id:
-                cur.execute("SELECT id FROM categories WHERE id = %s", (request_update.category_id,))
+                cur.execute("SELECT id FROM categories WHERE id = %s", (str(request_update.category_id),))
                 if not cur.fetchone():
                     raise HTTPException(
                         status_code=status.HTTP_400_BAD_REQUEST,
@@ -215,10 +215,10 @@ def update_review_request(
                 RETURNING *
             """, (
                 request_update.product_name, request_update.manufacturer,
-                request_update.category_id, request_update.product_url,
+                str(request_update.category_id) if request_update.category_id else None, request_update.product_url,
                 request_update.price, request_update.availability,
                 request_update.description, request_update.reasoning,
-                request_update.contact_email, request_id
+                request_update.contact_email, str(request_id)
             ))
             
             updated_request = cur.fetchone()
@@ -234,7 +234,7 @@ def update_review_request(
                 JOIN users u ON rr.user_id = u.id
                 LEFT JOIN categories c ON rr.category_id = c.id
                 WHERE rr.id = %s
-            """, (request_id,))
+            """, (str(request_id),))
             
             return cur.fetchone()
             
@@ -257,7 +257,7 @@ def delete_review_request(
     try:
         with conn.cursor(cursor_factory=RealDictCursor) as cur:
             # Get existing request
-            cur.execute("SELECT * FROM review_requests WHERE id = %s", (request_id,))
+            cur.execute("SELECT * FROM review_requests WHERE id = %s", (str(request_id),))
             existing_request = cur.fetchone()
             
             if not existing_request:
@@ -280,7 +280,7 @@ def delete_review_request(
                     detail="Can only delete pending review requests"
                 )
             
-            cur.execute("DELETE FROM review_requests WHERE id = %s", (request_id,))
+            cur.execute("DELETE FROM review_requests WHERE id = %s", (str(request_id),))
             conn.commit()
             
             return {"message": "Review request deleted successfully"}

@@ -29,18 +29,23 @@ const RequestReview: React.FC = () => {
   });
   const [loading, setLoading] = useState(false);
 
-  const categories = [
-    'Smartphones',
-    'Laptops',
-    'Tablets',
-    'Audio',
-    'Cameras',
-    'Gaming',
-    'Wearables',
-    'Smart Home',
-    'Accessories',
-    'Other'
-  ];
+  // Lưu danh sách categories từ API
+  const [categories, setCategories] = useState<{ id: string; name: string }[]>([]);
+
+  React.useEffect(() => {
+    // Gọi API lấy danh mục
+    const fetchCategories = async () => {
+      try {
+        const res = await fetch("http://localhost:8000/api/v1/categories");
+        if (!res.ok) throw new Error("Không tải được danh mục");
+        const data = await res.json();
+        setCategories(data);
+      } catch (err) {
+        console.error("Lỗi khi load categories:", err);
+      }
+    };
+    fetchCategories();
+  }, []);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
     setFormData({
@@ -51,15 +56,49 @@ const RequestReview: React.FC = () => {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-
     setLoading(true);
-    
-    // Simulate API call
-    setTimeout(() => {
+
+    try {
+      const accessToken = localStorage.getItem('access_token');
+      const tokenType = localStorage.getItem('token_type');
+      if (!accessToken || !tokenType) {
+        setLoading(false);
+        alert('Bạn chưa đăng nhập hoặc token không hợp lệ!');
+        return;
+      }
+      const payload = {
+        product_name: formData.productName,
+        manufacturer: formData.manufacturer,
+        category_id: formData.category,
+        product_url: formData.productUrl,
+        price: formData.price,
+        availability: formData.availability,
+        description: formData.description,
+        reasoning: formData.reasoning,
+        contact_email: formData.contactEmail,
+      };
+
+      const res = await fetch('http://localhost:8000/api/v1/review-requests/', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `${tokenType} ${accessToken}`,
+        },
+        body: JSON.stringify(payload),
+      });
+
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.detail || 'Gửi yêu cầu thất bại');
+      }
+
+  setLoading(false);
+  alert('Gửi yêu cầu thành công!');
+  navigate('/');
+    } catch (err: any) {
       setLoading(false);
-      // Show success message and redirect
-      navigate('/');
-    }, 2000);
+      alert(`Lỗi: ${err.message}`);
+    }
   };
 
   return (
@@ -158,8 +197,8 @@ const RequestReview: React.FC = () => {
                 >
                   <option value="">Select a category</option>
                   {categories.map(category => (
-                    <option key={category} value={category}>
-                      {category}
+                    <option key={category.id} value={category.id}>
+                      {category.name}
                     </option>
                   ))}
                 </select>
