@@ -14,6 +14,7 @@ import logging
 import uuid
 import tempfile
 import os
+import shutil
 
 logger = logging.getLogger("uvicorn.error")
 
@@ -436,12 +437,13 @@ def add_review_con(
 
 # Review Media
 @router.post("/{review_id}/media", response_model=ReviewMediaResponse)
-async def add_review_media(
+def add_review_media(
     review_id: str,
     media: ReviewMediaCreate,
     current_user: dict = Depends(get_current_user)
 ):
     """Add media to review (JSON with media_url)"""
+    from discord_media import discord_client
     import re
     conn = get_conn()
     try:
@@ -464,8 +466,9 @@ async def add_review_media(
             media_url = media.media_url
             if not url_pattern.match(media_url):
                 # Upload file lên Discord, lấy URL trả về
-                from discord_media import upload_media
-                media_url = await upload_media(media_url)
+                import asyncio
+                loop = asyncio.get_event_loop()
+                media_url = loop.run_until_complete(discord_client.upload_media(media_url))
             media_id = str(uuid.uuid4())
             cur.execute("""
                 INSERT INTO review_media (id, review_id, media_url, media_type, sort_order)
@@ -492,8 +495,9 @@ async def upload_review_media(
     sort_order: int = Form(0),
     current_user: dict = Depends(get_current_user)
 ):
-    """Upload media file to review (via Discord bot)"""
-    from discord_media import discord_client
+    """Upload media file to review (via Discord bot or local storage fallback)"""
+    logger.info(f"Starting media upload for review {review_id}, file: {file.filename}, type: {media_type}")
+    
     conn = get_conn()
     try:
         with conn.cursor(cursor_factory=RealDictCursor) as cur:
@@ -511,46 +515,90 @@ async def upload_review_media(
                     detail="Not authorized to modify this review"
                 )
             
-            # Validate file type
-            if not (media_type.startswith('image/') or media_type.startswith('video/')):
+            # Validate file type and map MIME type to database type
+            db_media_type = None
+            if media_type.startswith('image/'):
+                db_media_type = 'image'
+            elif media_type.startswith('video/'):
+                db_media_type = 'video'
+            else:
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
                     detail="Only image and video files are allowed"
                 )
             
+            logger.info(f"File validation passed, saving temporarily...")
+            
             # Save file temporarily
-            with tempfile.NamedTemporaryFile(delete=False, suffix=f"_{file.filename}") as temp_file:
-                content = await file.read()
-                temp_file.write(content)
-                temp_file_path = temp_file.name
+            temp_file_path = None
+            media_url = None
             
             try:
-                # Upload to Discord and get URL
-                from discord_media import upload_media
-                media_url = await upload_media(temp_file_path)
+                # Get file extension
+                file_ext = ""
+                if file.filename and "." in file.filename:
+                    file_ext = "." + file.filename.split(".")[-1]
                 
-                # Save to database
+                with tempfile.NamedTemporaryFile(delete=False, suffix=file_ext) as temp_file:
+                    content = await file.read()
+                    temp_file.write(content)
+                    temp_file_path = temp_file.name
+                
+                logger.info(f"File saved to temp path: {temp_file_path}")
+                
+                # Try Discord upload first
+                try:
+                    from discord_media import upload_media_to_discord
+                    logger.info("Attempting Discord upload...")
+                    media_url = await upload_media_to_discord(temp_file_path)
+                    logger.info(f"Discord upload successful, URL: {media_url}")
+                except Exception as discord_error:
+                    logger.warning(f"Discord upload failed: {discord_error}")
+                    
+                    # Fallback: Create a local storage path
+                    # In production, you'd upload to a cloud storage service here
+                    uploads_dir = os.path.join(os.path.dirname(__file__), "..", "uploads")
+                    os.makedirs(uploads_dir, exist_ok=True)
+                    
+                    # Generate unique filename
+                    import time
+                    timestamp = int(time.time())
+                    safe_filename = f"{timestamp}_{file.filename}" if file.filename else f"{timestamp}{file_ext}"
+                    final_path = os.path.join(uploads_dir, safe_filename)
+                    
+                    # Copy temp file to uploads directory
+                    import shutil
+                    shutil.copy2(temp_file_path, final_path)
+                    
+                    # Create a local URL (you should replace this with your actual server URL)
+                    media_url = f"http://127.0.0.1:8000/uploads/{safe_filename}"
+                    logger.info(f"Fallback local storage successful, URL: {media_url}")
+                
+                # Save to database - use the mapped media type
                 media_id = str(uuid.uuid4())
                 cur.execute("""
                     INSERT INTO review_media (id, review_id, media_url, media_type, sort_order)
                     VALUES (%s, %s, %s, %s, %s)
                     RETURNING *
-                """, (media_id, review_id, media_url, media_type, sort_order))
+                """, (media_id, review_id, media_url, db_media_type, sort_order))
                 new_media = cur.fetchone()
                 conn.commit()
+                
+                logger.info(f"Media saved to database with ID: {media_id}")
                 return new_media
                 
             finally:
                 # Clean up temporary file
-                if os.path.exists(temp_file_path):
+                if temp_file_path and os.path.exists(temp_file_path):
                     os.unlink(temp_file_path)
+                    logger.info("Temporary file cleaned up")
                     
     except HTTPException:
         raise
     except Exception as e:
         conn.rollback()
         logger.exception("Error uploading review media: %s", e)
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=f"Upload failed: {str(e)}")
     finally:
         put_conn(conn)
 

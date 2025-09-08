@@ -2,9 +2,9 @@
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "LimReview",
   "version": "0.1.0",
-  "identifier": "com.tauri.dev",
+  "identifier": "com.tauri.LimReview",
   "build": {
-    "frontendDist": "../build",
+    "frontendDist": "../src",
     "devUrl": "http://localhost:5173",
     "beforeDevCommand": "pnpm dev",
     "beforeBuildCommand": "pnpm build"

@@ -4,8 +4,10 @@ from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.openapi.docs import get_swagger_ui_html
 from fastapi.openapi.utils import get_openapi
+from fastapi.staticfiles import StaticFiles
 import time
 import logging
+import os
 from database.connection import init_pool, close_pool
 from discord_media import start_discord_bot
 
@@ -67,11 +69,21 @@ app.add_middleware(
         "http://localhost:3000",  # React development server
         "http://localhost:5173",  # Vite development server
         "http://localhost:8080",  # Vue development server
+        "http://127.0.0.1:5173",  # Vite with 127.0.0.1
         "https://yourdomain.com",  # Production frontend
     ],
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
+    allow_headers=[
+        "Accept",
+        "Accept-Language", 
+        "Content-Language",
+        "Content-Type",
+        "Authorization",
+        "Cache-Control",
+        "X-Requested-With"
+    ],
+    expose_headers=["*"],
 )
 
 # Trusted Host Middleware (optional, for production)
@@ -148,8 +160,16 @@ async def shutdown_event():
     try:
         close_pool()
         logger.info("Database connection pool closed successfully")
+        
+        # Cleanup Discord resources (if cleanup function exists)
+        try:
+            from discord_media import cleanup_discord
+            await cleanup_discord()
+            logger.info("Discord resources cleaned up successfully")
+        except (ImportError, AttributeError):
+            logger.info("No Discord cleanup needed")
     except Exception as e:
-        logger.error(f"Error closing database: {e}")
+        logger.error(f"Error during shutdown: {e}")
 
 # Root endpoint
 @app.get("/", tags=["Root"])
@@ -216,6 +236,13 @@ app.include_router(reviews_router, prefix="/api/v1")
 app.include_router(review_requests_router, prefix="/api/v1")
 app.include_router(contact_router, prefix="/api/v1")
 app.include_router(admin_router, prefix="/api/v1")
+
+# Create uploads directory if it doesn't exist
+uploads_dir = os.path.join(os.path.dirname(__file__), "uploads")
+os.makedirs(uploads_dir, exist_ok=True)
+
+# Mount static files for uploads
+app.mount("/uploads", StaticFiles(directory=uploads_dir), name="uploads")
 
 # Custom OpenAPI schema
 def custom_openapi():

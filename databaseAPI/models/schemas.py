@@ -196,7 +196,7 @@ class ReviewProBase(BaseModel):
     sort_order: int = 0
 
 class ReviewProCreate(ReviewProBase):
-    review_id: UUID
+    pass
 
 class ReviewProResponse(ReviewProBase):
     id: UUID
@@ -211,7 +211,7 @@ class ReviewConBase(BaseModel):
     sort_order: int = 0
 
 class ReviewConCreate(ReviewConBase):
-    review_id: UUID
+    pass
 
 class ReviewConResponse(ReviewConBase):
     id: UUID
@@ -227,7 +227,7 @@ class ReviewMediaBase(BaseModel):
     sort_order: int = 0
 
 class ReviewMediaCreate(ReviewMediaBase):
-    review_id: UUID
+    pass
 
 class ReviewMediaResponse(ReviewMediaBase):
     id: UUID
