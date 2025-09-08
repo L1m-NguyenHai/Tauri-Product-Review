@@ -1,5 +1,8 @@
-from fastapi import APIRouter, HTTPException, status, Depends, Query
+from fastapi import APIRouter, HTTPException, status, Depends, Query, File, UploadFile, Form
 from typing import List, Optional
+import tempfile
+import os
+import shutil
 from models.schemas import (
     UserResponse, UserUpdate, UserFollowCreate, UserFollowResponse,
     PaginationParams
@@ -13,6 +16,155 @@ import uuid
 logger = logging.getLogger("uvicorn.error")
 
 router = APIRouter(prefix="/users", tags=["Users"])
+
+@router.get("/profile/stats")
+def get_user_stats(current_user: dict = Depends(get_current_user)):
+    """Get current user's statistics"""
+    conn = get_conn()
+    try:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            # Get total reviews count
+            cur.execute("""
+                SELECT COUNT(*) as total_reviews
+                FROM reviews
+                WHERE user_id = %s AND status = 'published'
+            """, (current_user["id"],))
+            reviews_count = cur.fetchone()["total_reviews"]
+            
+            # Get average rating
+            cur.execute("""
+                SELECT AVG(rating) as avg_rating
+                FROM reviews
+                WHERE user_id = %s AND status = 'published'
+            """, (current_user["id"],))
+            avg_rating_result = cur.fetchone()["avg_rating"]
+            avg_rating = float(avg_rating_result) if avg_rating_result else 0
+            
+            # Get helpful votes count (count of helpful votes received on user's reviews)
+            cur.execute("""
+                SELECT COUNT(*) as helpful_votes
+                FROM review_helpful_votes rhv
+                JOIN reviews r ON rhv.review_id = r.id
+                WHERE r.user_id = %s
+            """, (current_user["id"],))
+            helpful_votes = cur.fetchone()["helpful_votes"]
+            
+            # Get followers count
+            cur.execute("""
+                SELECT COUNT(*) as followers
+                FROM user_follows
+                WHERE followed_id = %s
+            """, (current_user["id"],))
+            followers_count = cur.fetchone()["followers"]
+            
+            return {
+                "total_reviews": reviews_count,
+                "avg_rating": round(avg_rating, 1),
+                "helpful_votes": helpful_votes,
+                "followers": followers_count
+            }
+            
+    except Exception as e:
+        logger.exception("Error getting user stats: %s", e)
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        put_conn(conn)
+
+@router.post("/profile/avatar", response_model=UserResponse)
+async def update_user_avatar(
+    file: UploadFile = File(...),
+    current_user: dict = Depends(get_current_user)
+):
+    """Update current user's profile picture"""
+    
+    # Validate file type
+    if not file.content_type or not file.content_type.startswith('image/'):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Only image files are allowed"
+        )
+    
+    # Validate file size (max 5MB)
+    if file.size and file.size > 5 * 1024 * 1024:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="File size must be less than 5MB"
+        )
+    
+    conn = get_conn()
+    try:
+        # Save file temporarily
+        temp_file_path = None
+        avatar_url = None
+        
+        try:
+            # Get file extension
+            file_ext = ""
+            if file.filename and "." in file.filename:
+                file_ext = "." + file.filename.split(".")[-1]
+            
+            with tempfile.NamedTemporaryFile(delete=False, suffix=file_ext) as temp_file:
+                content = await file.read()
+                temp_file.write(content)
+                temp_file_path = temp_file.name
+            
+            logger.info(f"Avatar file saved to temp path: {temp_file_path}")
+            
+            # Try Discord upload first
+            try:
+                from discord_media import upload_media_to_discord
+                logger.info("Attempting Discord upload for avatar...")
+                avatar_url = await upload_media_to_discord(temp_file_path)
+                logger.info(f"Discord upload successful for avatar, URL: {avatar_url}")
+            except Exception as discord_error:
+                logger.warning(f"Discord upload failed for avatar: {discord_error}")
+                
+                # Fallback: Create a local storage path
+                uploads_dir = os.path.join(os.path.dirname(__file__), "..", "uploads", "avatars")
+                os.makedirs(uploads_dir, exist_ok=True)
+                
+                # Generate unique filename
+                import time
+                timestamp = int(time.time())
+                safe_filename = f"{current_user['id']}_{timestamp}_{file.filename}" if file.filename else f"{current_user['id']}_{timestamp}{file_ext}"
+                final_path = os.path.join(uploads_dir, safe_filename)
+                
+                # Copy temp file to uploads directory
+                shutil.copy2(temp_file_path, final_path)
+                
+                # Create a local URL
+                avatar_url = f"http://127.0.0.1:8000/uploads/avatars/{safe_filename}"
+                logger.info(f"Fallback local storage successful for avatar, URL: {avatar_url}")
+            
+            # Update user avatar in database
+            with conn.cursor(cursor_factory=RealDictCursor) as cur:
+                cur.execute("""
+                    UPDATE users 
+                    SET avatar = %s, updated_at = CURRENT_TIMESTAMP
+                    WHERE id = %s
+                    RETURNING *
+                """, (avatar_url, current_user["id"]))
+                
+                updated_user = cur.fetchone()
+                conn.commit()
+                
+                logger.info(f"Avatar updated for user {current_user['id']}")
+                return updated_user
+                
+        finally:
+            # Clean up temporary file
+            if temp_file_path and os.path.exists(temp_file_path):
+                os.unlink(temp_file_path)
+                logger.info("Temporary avatar file cleaned up")
+                
+    except HTTPException:
+        raise
+    except Exception as e:
+        conn.rollback()
+        logger.exception("Error updating user avatar: %s", e)
+        raise HTTPException(status_code=500, detail=f"Avatar upload failed: {str(e)}")
+    finally:
+        put_conn(conn)
 
 @router.get("/profile", response_model=UserResponse)
 def get_user_profile(current_user: dict = Depends(get_current_user)):

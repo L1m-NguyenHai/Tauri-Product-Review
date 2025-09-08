@@ -239,7 +239,9 @@ app.include_router(admin_router, prefix="/api/v1")
 
 # Create uploads directory if it doesn't exist
 uploads_dir = os.path.join(os.path.dirname(__file__), "uploads")
+avatars_dir = os.path.join(uploads_dir, "avatars")
 os.makedirs(uploads_dir, exist_ok=True)
+os.makedirs(avatars_dir, exist_ok=True)
 
 # Mount static files for uploads
 app.mount("/uploads", StaticFiles(directory=uploads_dir), name="uploads")

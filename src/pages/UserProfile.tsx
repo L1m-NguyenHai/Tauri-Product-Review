@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Camera, Edit, Star, Calendar, Award, TrendingUp } from 'lucide-react';
 import { useTheme } from '../contexts/ThemeContext';
@@ -9,51 +9,125 @@ const UserProfile: React.FC = () => {
   const { user } = useAuth();
   const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState('reviews');
+  const [userReviews, setUserReviews] = useState<any[]>([]);
+  const [userStats, setUserStats] = useState({
+    total_reviews: 0,
+    helpful_votes: 0,
+    followers: 0,
+    avg_rating: 0
+  });
+  const [loading, setLoading] = useState(true);
+  const [uploadingAvatar, setUploadingAvatar] = useState(false);
+
+  // Handle avatar upload
+  const handleAvatarUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    // Validate file type
+    if (!file.type.startsWith('image/')) {
+      alert('Please select an image file');
+      return;
+    }
+
+    // Validate file size (5MB)
+    if (file.size > 5 * 1024 * 1024) {
+      alert('File size must be less than 5MB');
+      return;
+    }
+
+    setUploadingAvatar(true);
+    try {
+      const accessToken = localStorage.getItem('access_token');
+      const tokenType = localStorage.getItem('token_type');
+      
+      if (!accessToken || !tokenType) {
+        navigate('/login');
+        return;
+      }
+
+      const formData = new FormData();
+      formData.append('file', file);
+
+      const response = await fetch('http://127.0.0.1:8000/api/v1/users/profile/avatar', {
+        method: 'POST',
+        headers: {
+          'Authorization': `${tokenType} ${accessToken}`
+        },
+        body: formData
+      });
+
+      if (response.ok) {
+        // Refresh the page or update user context
+        window.location.reload();
+      } else {
+        const errorData = await response.json();
+        alert(`Upload failed: ${errorData.detail || 'Unknown error'}`);
+      }
+    } catch (error) {
+      console.error('Error uploading avatar:', error);
+      alert('Failed to upload avatar. Please try again.');
+    } finally {
+      setUploadingAvatar(false);
+      // Reset the input
+      event.target.value = '';
+    }
+  };
 
   // Redirect to login if not authenticated
-  React.useEffect(() => {
+  useEffect(() => {
     if (!user) {
       navigate('/login');
     }
   }, [user, navigate]);
 
-  // Mock user data
-  const userStats = {
-    totalReviews: 23,
-    helpfulVotes: 156,
-    followers: 89,
-    avgRating: 4.2
-  };
+  // Fetch user data and reviews
+  useEffect(() => {
+    const fetchUserData = async () => {
+      if (!user) return;
+      
+      setLoading(true);
+      try {
+        const accessToken = localStorage.getItem('access_token');
+        const tokenType = localStorage.getItem('token_type');
+        
+        if (!accessToken || !tokenType) {
+          navigate('/login');
+          return;
+        }
 
-  const userReviews = [
-    {
-      id: '1',
-      product: 'iPhone 15 Pro',
-      rating: 5,
-      title: 'Excellent upgrade from iPhone 14',
-      date: '2024-01-15',
-      helpful: 23,
-      image: 'https://images.pexels.com/photos/788946/pexels-photo-788946.jpeg?auto=compress&cs=tinysrgb&w=100&h=80&dpr=2'
-    },
-    {
-      id: '2',
-      product: 'MacBook Pro M3',
-      rating: 4,
-      title: 'Powerful but expensive',
-      date: '2024-01-10',
-      helpful: 15,
-      image: 'https://images.pexels.com/photos/205421/pexels-photo-205421.jpeg?auto=compress&cs=tinysrgb&w=100&h=80&dpr=2'
-    },
-    {
-      id: '3',
-      product: 'Sony WH-1000XM5',
-      rating: 5,
-      title: 'Best noise canceling headphones',
-      date: '2024-01-05',
-      helpful: 31,
-      image: 'https://images.pexels.com/photos/3394650/pexels-photo-3394650.jpeg?auto=compress&cs=tinysrgb&w=100&h=80&dpr=2'
-    }
-  ];
+        // Fetch user statistics
+        const statsResponse = await fetch(`http://127.0.0.1:8000/api/v1/users/profile/stats`, {
+          headers: {
+            'Authorization': `${tokenType} ${accessToken}`
+          }
+        });
+        
+        if (statsResponse.ok) {
+          const statsData = await statsResponse.json();
+          setUserStats(statsData);
+        }
+
+        // Fetch user reviews
+        const reviewsResponse = await fetch(`http://127.0.0.1:8000/api/v1/users/${user.id}/reviews`, {
+          headers: {
+            'Authorization': `${tokenType} ${accessToken}`
+          }
+        });
+        
+        if (reviewsResponse.ok) {
+          const reviewsData = await reviewsResponse.json();
+          setUserReviews(reviewsData.items || []);
+        }
+      } catch (error) {
+        console.error('Error fetching user data:', error);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchUserData();
+  }, [user, navigate]);
 
   if (!user) {
     return (
@@ -61,6 +135,16 @@ const UserProfile: React.FC = () => {
         isDark ? 'text-gray-400' : 'text-gray-500'
       }`}>
         <p className="text-lg">Please log in to view your profile.</p>
+      </div>
+    );
+  }
+
+  if (loading) {
+    return (
+      <div className={`text-center py-12 ${
+        isDark ? 'text-gray-400' : 'text-gray-500'
+      }`}>
+        <p className="text-lg">Loading profile...</p>
       </div>
     );
   }
@@ -86,9 +170,23 @@ const UserProfile: React.FC = () => {
                 </div>
               )}
             </div>
-            <button className="absolute bottom-2 right-2 p-2 bg-blue-500 text-white rounded-full hover:bg-blue-600 transition-colors">
+            <label className="absolute bottom-2 right-2 p-2 bg-blue-500 text-white rounded-full hover:bg-blue-600 transition-colors cursor-pointer">
               <Camera className="w-4 h-4" />
-            </button>
+              <input
+                type="file"
+                accept="image/*"
+                onChange={handleAvatarUpload}
+                className="hidden"
+                disabled={uploadingAvatar}
+                aria-label="Upload profile picture"
+                title="Upload profile picture"
+              />
+            </label>
+            {uploadingAvatar && (
+              <div className="absolute inset-0 bg-black bg-opacity-50 rounded-full flex items-center justify-center">
+                <div className="text-white text-sm">Uploading...</div>
+              </div>
+            )}
           </div>
 
           <div className="flex-1">
@@ -121,7 +219,7 @@ const UserProfile: React.FC = () => {
                 <div className={`text-2xl font-bold ${
                   isDark ? 'text-white' : 'text-gray-900'
                 }`}>
-                  {userStats.totalReviews}
+                  {userStats.total_reviews || 0}
                 </div>
                 <div className={`text-sm ${
                   isDark ? 'text-gray-400' : 'text-gray-600'
@@ -133,7 +231,7 @@ const UserProfile: React.FC = () => {
                 <div className={`text-2xl font-bold ${
                   isDark ? 'text-white' : 'text-gray-900'
                 }`}>
-                  {userStats.helpfulVotes}
+                  {userStats.helpful_votes || 0}
                 </div>
                 <div className={`text-sm ${
                   isDark ? 'text-gray-400' : 'text-gray-600'
@@ -145,7 +243,7 @@ const UserProfile: React.FC = () => {
                 <div className={`text-2xl font-bold ${
                   isDark ? 'text-white' : 'text-gray-900'
                 }`}>
-                  {userStats.followers}
+                  {userStats.followers || 0}
                 </div>
                 <div className={`text-sm ${
                   isDark ? 'text-gray-400' : 'text-gray-600'
@@ -157,7 +255,7 @@ const UserProfile: React.FC = () => {
                 <div className={`text-2xl font-bold ${
                   isDark ? 'text-white' : 'text-gray-900'
                 }`}>
-                  {userStats.avgRating}
+                  {userStats.avg_rating || 0}
                 </div>
                 <div className={`text-sm ${
                   isDark ? 'text-gray-400' : 'text-gray-600'
@@ -284,56 +382,70 @@ const UserProfile: React.FC = () => {
         <div className="p-6">
           {activeTab === 'reviews' && (
             <div className="space-y-4">
-              {userReviews.map((review) => (
-                <div key={review.id} className={`p-4 rounded-lg border ${
-                  isDark ? 'border-gray-700' : 'border-gray-200'
-                }`}>
-                  <div className="flex gap-4">
-                    <img
-                      src={review.image}
-                      alt={review.product}
-                      className="w-16 h-12 object-cover rounded-lg"
-                    />
-                    <div className="flex-1">
-                      <div className="flex items-start justify-between">
-                        <div>
-                          <h3 className={`font-medium ${
-                            isDark ? 'text-white' : 'text-gray-900'
-                          }`}>
-                            {review.title}
-                          </h3>
-                          <p className={`text-sm ${
-                            isDark ? 'text-gray-400' : 'text-gray-600'
-                          }`}>
-                            {review.product}
-                          </p>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <div className="flex items-center gap-1">
-                            {[...Array(5)].map((_, i) => (
-                              <Star
-                                key={i}
-                                className={`w-4 h-4 ${
-                                  i < review.rating
-                                    ? 'fill-yellow-400 text-yellow-400'
-                                    : 'text-gray-300'
-                                }`}
-                              />
-                            ))}
+              {userReviews.length > 0 ? (
+                userReviews.map((review) => (
+                  <div key={review.id} className={`p-4 rounded-lg border ${
+                    isDark ? 'border-gray-700' : 'border-gray-200'
+                  }`}>
+                    <div className="flex gap-4">
+                      <div className="w-16 h-12 bg-gray-200 dark:bg-gray-700 rounded-lg flex items-center justify-center">
+                        <span className="text-xs text-gray-500">No Image</span>
+                      </div>
+                      <div className="flex-1">
+                        <div className="flex items-start justify-between">
+                          <div>
+                            <h3 className={`font-medium ${
+                              isDark ? 'text-white' : 'text-gray-900'
+                            }`}>
+                              {review.title}
+                            </h3>
+                            <p className={`text-sm ${
+                              isDark ? 'text-gray-400' : 'text-gray-600'
+                            }`}>
+                              {review.product_name}
+                            </p>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <div className="flex items-center gap-1">
+                              {[...Array(5)].map((_, i) => (
+                                <Star
+                                  key={i}
+                                  className={`w-4 h-4 ${
+                                    i < review.rating
+                                      ? 'fill-yellow-400 text-yellow-400'
+                                      : 'text-gray-300'
+                                  }`}
+                                />
+                              ))}
+                            </div>
                           </div>
                         </div>
-                      </div>
-                      <div className="flex items-center gap-4 mt-2 text-sm text-gray-500">
-                        <span className="flex items-center gap-1">
-                          <Calendar className="w-4 h-4" />
-                          {review.date}
-                        </span>
-                        <span>{review.helpful} found helpful</span>
+                        <p className={`text-sm mt-2 ${
+                          isDark ? 'text-gray-300' : 'text-gray-700'
+                        }`}>
+                          {review.content?.substring(0, 150)}
+                          {review.content?.length > 150 ? '...' : ''}
+                        </p>
+                        <div className="flex items-center gap-4 mt-2 text-sm text-gray-500">
+                          <span className="flex items-center gap-1">
+                            <Calendar className="w-4 h-4" />
+                            {new Date(review.created_at).toLocaleDateString()}
+                          </span>
+                          <span>Status: {review.status}</span>
+                        </div>
                       </div>
                     </div>
                   </div>
+                ))
+              ) : (
+                <div className="text-center py-8">
+                  <p className={`${
+                    isDark ? 'text-gray-400' : 'text-gray-500'
+                  }`}>
+                    No reviews yet. Start reviewing products to build your profile!
+                  </p>
                 </div>
-              ))}
+              )}
             </div>
           )}
 
