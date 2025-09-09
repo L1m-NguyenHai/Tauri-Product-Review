@@ -15,6 +15,7 @@ import uuid
 import tempfile
 import os
 import shutil
+import requests
 
 logger = logging.getLogger("uvicorn.error")
 
@@ -832,6 +833,18 @@ def create_review_comment(
     conn = get_conn()
     try:
         with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            # --- Call clean-comment API trước khi lưu ---
+            try:
+                api_url = "http://127.0.0.1:8001/clean-comment"  # endpoint FastAPI (đã đổi sang port 8001)
+                payload = {"text": comment["content"]}
+                response = requests.post(api_url, json=payload, timeout=5)
+                response.raise_for_status()
+                masked_content = response.json()["masked"]
+            except Exception as e:
+                # Nếu API fail, fallback dùng content gốc
+                logger.warning("Clean comment API failed, using original content: %s", e)
+                masked_content = comment["content"]
+
             comment_id = str(uuid.uuid4())
             cur.execute(
                 """
@@ -842,8 +855,8 @@ def create_review_comment(
                 RETURNING *
                 """,
                 (
-                    comment_id, review_id, current_user["id"],
-                    comment.get("parent_id"), comment["content"], "visible"
+                    comment_id, review_id, str(current_user["id"]),
+                    comment.get("parent_id"), masked_content, "visible"
                 )
             )
             new_comment = cur.fetchone()
