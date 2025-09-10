@@ -30,6 +30,40 @@ export const useAuth = () => {
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<User | null>(null);
 
+  // Initialize user from localStorage on component mount
+  React.useEffect(() => {
+    const initializeUser = async () => {
+      const token = localStorage.getItem('access_token');
+      const tokenType = localStorage.getItem('token_type');
+      
+      if (token && tokenType) {
+        try {
+          const response = await axios.get('http://127.0.0.1:8000/api/v1/auth/me', {
+            headers: {
+              Authorization: `${tokenType} ${token}`,
+            },
+          });
+
+          const userData = response.data;
+          setUser({
+            id: userData.id,
+            email: userData.email,
+            name: userData.name,
+            avatar: userData.avatar,
+            role: userData.role,
+          });
+        } catch (error) {
+          console.error('Failed to restore user session:', error);
+          // Clear invalid tokens
+          localStorage.removeItem('access_token');
+          localStorage.removeItem('token_type');
+        }
+      }
+    };
+
+    initializeUser();
+  }, []);
+
   const login = async (email: string, password: string): Promise<boolean> => {
     try {
       // Authenticate and get the token
@@ -98,6 +132,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const logout = () => {
     setUser(null);
+    localStorage.removeItem('access_token');
+    localStorage.removeItem('token_type');
   };
 
   const isAdmin = user?.role === 'admin';

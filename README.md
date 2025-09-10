@@ -87,6 +87,46 @@ pnpm tauri dev
 - Kiểm tra URL trong code frontend (ví dụ `http://localhost:8000`).  
 - Đảm bảo API (Python) đang chạy trước khi bật Tauri.
 
+### Lỗi 6: Admin Panel trả về 403 Forbidden
+- Xem hướng dẫn debug chi tiết: `docs/how-to-debug.md`
+- Login với tài khoản admin: `admin@example.com` / `password`
+- Chạy debug script trong browser console (xem file `debug-quick.js`)
+
+---
+
+## 🔍 Debug & Development
+
+### Quick Debug Admin Panel Issues
+1. **Khởi động ứng dụng:**
+   ```bash
+   # Terminal 1: Backend
+   cd databaseAPI && python app.py
+   
+   # Terminal 2: Frontend  
+   pnpm tauri dev
+   ```
+
+2. **Login với admin account:**
+   - Email: `admin@example.com`
+   - Password: `password`
+
+3. **Chạy debug script:**
+   - Mở Admin Panel (`/admin`)
+   - Nhấn `F12` -> Console tab
+   - Copy nội dung file `debug-quick.js` và paste vào console
+   - Xem kết quả debug
+
+4. **Các debug files hữu ích:**
+   - `debug-quick.js` - Script debug nhanh trong console
+   - `debug-auth.js` - Script kiểm tra authentication chi tiết  
+   - `docs/how-to-debug.md` - Hướng dẫn debug từng bước
+   - `docs/debug-403-errors.md` - Chi tiết về lỗi 403
+
+### Development Notes
+- Debug panel sẽ hiện trong Admin Panel khi ở development mode
+- API logs sẽ xuất hiện trong browser console
+- Backend logs hiện trong terminal chạy `python app.py`
+
 ---
 
 ## Hoàn thành
@@ -94,4 +134,5 @@ pnpm tauri dev
 - Cài đặt dependencies  
 - Chạy API backend  
 - Khởi động ứng dụng Tauri frontend  
-- Có hướng dẫn xử lý lỗi thường gặp  
+- Có hướng dẫn xử lý lỗi thường gặp
+- Có công cụ debug cho Admin Panel  

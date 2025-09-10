@@ -172,13 +172,39 @@ const Login: React.FC = () => {
               } mb-2`}>
                 Demo Credentials:
               </p>
-              <div className="space-y-1 text-xs">
-                <p className={isDark ? 'text-gray-500' : 'text-gray-500'}>
-                  Admin: admin@example.com / admin
-                </p>
-                <p className={isDark ? 'text-gray-500' : 'text-gray-500'}>
-                  User: user@example.com / password
-                </p>
+              <div className="space-y-2 text-xs flex flex-col items-center">
+                <div className="flex items-center gap-2">
+                  <span className={isDark ? 'text-gray-500' : 'text-gray-500'}>
+                    Admin: admin@example.com / password
+                  </span>
+                  <button
+                    type="button"
+                    className="ml-1 px-2 py-1 rounded bg-blue-100 hover:bg-blue-200 text-blue-600 text-xs font-semibold border border-blue-200 transition-colors focus:outline-none focus:ring-2 focus:ring-blue-400"
+                    onClick={() => {
+                      setEmail('admin@example.com');
+                      setPassword('password');
+                    }}
+                    aria-label="Fill admin credentials"
+                  >
+                    Autofill
+                  </button>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className={isDark ? 'text-gray-500' : 'text-gray-500'}>
+                    User: test@test.com / 123123
+                  </span>
+                  <button
+                    type="button"
+                    className="ml-1 px-2 py-1 rounded bg-green-100 hover:bg-green-200 text-green-700 text-xs font-semibold border border-green-200 transition-colors focus:outline-none focus:ring-2 focus:ring-green-400"
+                    onClick={() => {
+                      setEmail('test@test.com');
+                      setPassword('123123');
+                    }}
+                    aria-label="Fill user credentials"
+                  >
+                    Autofill
+                  </button>
+                </div>
               </div>
             </div>
           </div>

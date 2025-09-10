@@ -1,13 +1,170 @@
-import React, { useState } from 'react';
-import { Users, MessageSquare, Package, TrendingUp, Eye, Edit, Trash2, CheckCircle, XCircle } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { Users, MessageSquare, Package, TrendingUp, Eye, Edit, Trash2, CheckCircle, XCircle, Loader2, RefreshCw } from 'lucide-react';
 import { useTheme } from '../contexts/ThemeContext';
 import { useAuth } from '../contexts/AuthContext';
+import { adminAPI, type User, type Review, type ReviewRequest, type DashboardStats } from '../services/api';
+import { useNotification } from '../components/Notification';
 
 const AdminPanel: React.FC = () => {
   const { isDark } = useTheme();
-  const { isAdmin } = useAuth();
+  const { isAdmin, user } = useAuth();
   const [activeTab, setActiveTab] = useState('overview');
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const { showNotification, NotificationComponent } = useNotification();
 
+  // State for data
+  const [dashboardStats, setDashboardStats] = useState<DashboardStats | null>(null);
+  const [users, setUsers] = useState<User[]>([]);
+  const [reviews, setReviews] = useState<Review[]>([]);
+  const [reviewRequests, setReviewRequests] = useState<ReviewRequest[]>([]);
+
+  // All function definitions before conditional return
+  const loadDashboardData = async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      // Load data with individual error handling
+      const results = await Promise.allSettled([
+        adminAPI.getDashboardStats(),
+        adminAPI.getAllUsers({ limit: 10 }),
+        adminAPI.getAllReviewsForAdmin({ limit: 10, sort_by: 'created_at', sort_order: 'desc' }),
+        adminAPI.getPendingReviewRequests()
+      ]);
+
+      // Handle dashboard stats
+      if (results[0].status === 'fulfilled') {
+        setDashboardStats(results[0].value);
+      } else {
+        console.error('Failed to load dashboard stats:', results[0].reason);
+        showNotification('warning', 'Could not load dashboard statistics');
+      }
+
+      // Handle users
+      if (results[1].status === 'fulfilled') {
+        setUsers(results[1].value.users || []);
+      } else {
+        console.error('Failed to load users:', results[1].reason);
+        showNotification('warning', 'Could not load users data');
+      }
+
+      // Handle reviews
+      if (results[2].status === 'fulfilled') {
+        console.log('Reviews response:', results[2].value);
+        setReviews(results[2].value.reviews || []);
+      } else {
+        console.error('Failed to load reviews:', results[2].reason);
+        setReviews([]);
+      }
+
+      // Handle review requests
+      if (results[3].status === 'fulfilled') {
+        setReviewRequests(results[3].value || []);
+      } else {
+        console.error('Failed to load review requests:', results[3].reason);
+        showNotification('warning', 'Could not load review requests');
+      }
+
+      // Check if all failed
+      const allFailed = results.every(result => result.status === 'rejected');
+      if (allFailed) {
+        throw new Error('All API calls failed - check authentication');
+      }
+
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'Failed to load data';
+      setError(errorMessage);
+      showNotification('error', errorMessage);
+      console.error('Failed to load dashboard data:', err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleApproveReview = async (reviewId: string) => {
+    try {
+      await adminAPI.approveReview(reviewId);
+      setReviews(prev => prev.map(review => 
+        review.id === reviewId 
+          ? { ...review, status: 'published' as const }
+          : review
+      ));
+      showNotification('success', 'Review approved successfully');
+    } catch (err) {
+      console.error('Failed to approve review:', err);
+      showNotification('error', 'Failed to approve review');
+    }
+  };
+
+  const handleRejectReview = async (reviewId: string) => {
+    try {
+      await adminAPI.rejectReview(reviewId);
+      setReviews(prev => prev.map(review => 
+        review.id === reviewId 
+          ? { ...review, status: 'rejected' as const }
+          : review
+      ));
+      showNotification('success', 'Review rejected successfully');
+    } catch (err) {
+      console.error('Failed to reject review:', err);
+      showNotification('error', 'Failed to reject review');
+    }
+  };
+
+  const handleDeleteUser = async (userId: string) => {
+    if (!confirm('Are you sure you want to delete this user?')) return;
+    
+    try {
+      await adminAPI.deleteUser(userId);
+      setUsers(prev => prev.filter(user => user.id !== userId));
+      showNotification('success', 'User deleted successfully');
+    } catch (err) {
+      console.error('Failed to delete user:', err);
+      showNotification('error', 'Failed to delete user');
+    }
+  };
+
+  const handleApproveRequest = async (requestId: string) => {
+    try {
+      await adminAPI.approveReviewRequest(requestId);
+      setReviewRequests(prev => prev.map(request => 
+        request.id === requestId 
+          ? { ...request, status: 'approved' as const }
+          : request
+      ));
+      showNotification('success', 'Review request approved successfully');
+    } catch (err) {
+      console.error('Failed to approve request:', err);
+      showNotification('error', 'Failed to approve request');
+    }
+  };
+
+  const handleRejectRequest = async (requestId: string) => {
+    const reason = prompt('Please provide a reason for rejection:');
+    if (!reason) return;
+    
+    try {
+      await adminAPI.rejectReviewRequest(requestId, reason);
+      setReviewRequests(prev => prev.map(request => 
+        request.id === requestId 
+          ? { ...request, status: 'rejected' as const, admin_notes: reason }
+          : request
+      ));
+      showNotification('success', 'Review request rejected successfully');
+    } catch (err) {
+      console.error('Failed to reject request:', err);
+      showNotification('error', 'Failed to reject request');
+    }
+  };
+
+  // useEffect hook after all function definitions
+  useEffect(() => {
+    if (isAdmin) {
+      loadDashboardData();
+    }
+  }, [isAdmin]);
+
+  // Early return for non-admin users
   if (!isAdmin) {
     return (
       <div className={`text-center py-12 ${
@@ -18,96 +175,38 @@ const AdminPanel: React.FC = () => {
     );
   }
 
-  const stats = [
-    { icon: Users, label: 'Total Users', value: '1,234', change: '+12%' },
-    { icon: MessageSquare, label: 'Total Reviews', value: '15,234', change: '+8%' },
-    { icon: Package, label: 'Products', value: '2,890', change: '+15%' },
-    { icon: TrendingUp, label: 'Pending Requests', value: '23', change: '+5%' }
-  ];
+  const stats = dashboardStats ? [
+    { icon: Users, label: 'Total Users', value: dashboardStats.total_users?.toLocaleString() || '0', change: `+${dashboardStats.recent_registrations || 0}` },
+    { icon: MessageSquare, label: 'Total Reviews', value: dashboardStats.total_reviews?.toLocaleString() || '0', change: `${dashboardStats.pending_reviews || 0} pending` },
+    { icon: Package, label: 'Products', value: dashboardStats.total_products?.toLocaleString() || '0', change: `${dashboardStats.average_rating?.toFixed(1) || '0.0'} avg rating` },
+    { icon: TrendingUp, label: 'Categories', value: dashboardStats.total_categories?.toString() || '0', change: 'Active' }
+  ] : [];
 
-  const recentReviews = [
-    {
-      id: '1',
-      user: 'HuyNe hehe',
-      product: 'iPhone 15 Pro',
-      rating: 5,
-      status: 'published',
-      date: '2024-01-15'
-    },
-    {
-      id: '2',
-      user: 'Sarah Wilson',
-      product: 'MacBook Pro M3',
-      rating: 4,
-      status: 'pending',
-      date: '2024-01-14'
-    },
-    {
-      id: '3',
-      user: 'Mike Johnson',
-      product: 'Sony WH-1000XM5',
-      rating: 5,
-      status: 'published',
-      date: '2024-01-13'
-    }
-  ];
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="flex items-center space-x-2">
+          <Loader2 className="w-6 h-6 animate-spin text-blue-500" />
+          <span className={isDark ? 'text-gray-300' : 'text-gray-700'}>Loading dashboard...</span>
+        </div>
+      </div>
+    );
+  }
 
-  const reviewRequests = [
-    {
-      id: '1',
-      product: 'Steam Deck OLED',
-      user: 'gaming_enthusiast@email.com',
-      category: 'Gaming',
-      status: 'pending',
-      date: '2024-01-15'
-    },
-    {
-      id: '2',
-      product: 'Google Pixel 8 Pro',
-      user: 'tech_reviewer@email.com',
-      category: 'Smartphones',
-      status: 'approved',
-      date: '2024-01-14'
-    },
-    {
-      id: '3',
-      product: 'Framework Laptop 16',
-      user: 'dev_user@email.com',
-      category: 'Laptops',
-      status: 'pending',
-      date: '2024-01-13'
-    }
-  ];
-
-  const users = [
-    {
-      id: '1',
-      name: 'John Doe',
-      email: 'john@example.com',
-      role: 'user',
-      reviews: 23,
-      joinDate: '2023-06-15',
-      status: 'active'
-    },
-    {
-      id: '2',
-      name: 'Sarah Wilson',
-      email: 'sarah@example.com',
-      role: 'user',
-      reviews: 45,
-      joinDate: '2023-03-20',
-      status: 'active'
-    },
-    {
-      id: '3',
-      name: 'Mike Johnson',
-      email: 'mike@example.com',
-      role: 'reviewer',
-      reviews: 12,
-      joinDate: '2023-12-01',
-      status: 'active'
-    }
-  ];
+  if (error) {
+    return (
+      <div className="text-center py-12">
+        <p className="text-lg text-red-500 mb-4">{error}</p>
+        <button 
+          onClick={loadDashboardData}
+          className="flex items-center space-x-2 mx-auto px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors"
+        >
+          <RefreshCw className="w-4 h-4" />
+          <span>Retry</span>
+        </button>
+      </div>
+    );
+  }
 
   const TabButton = ({ id, label, count }: { id: string; label: string; count?: number }) => (
     <button
@@ -124,8 +223,31 @@ const AdminPanel: React.FC = () => {
     </button>
   );
 
+  // Debug info
+  const debugInfo = {
+    user,
+    isAdmin,
+    hasToken: !!localStorage.getItem('access_token'),
+    tokenType: localStorage.getItem('token_type'),
+    tokenPreview: localStorage.getItem('access_token')?.substring(0, 20) + '...'
+  };
+
   return (
     <div className="space-y-8">
+      {NotificationComponent}
+      
+      {/* Debug Panel - Remove in production */}
+      {import.meta.env.DEV && (
+        <div className={`p-4 rounded-lg border-2 border-dashed ${
+          isDark ? 'border-yellow-600 bg-yellow-900/20' : 'border-yellow-500 bg-yellow-50'
+        }`}>
+          <h3 className="font-semibold text-yellow-600 mb-2">Debug Info (Development Only)</h3>
+          <pre className="text-xs text-gray-600 dark:text-gray-400">
+            {JSON.stringify(debugInfo, null, 2)}
+          </pre>
+        </div>
+      )}
+      
       {/* Header */}
       <div className={`rounded-xl p-6 ${
         isDark ? 'bg-gray-800' : 'bg-white'
@@ -182,7 +304,7 @@ const AdminPanel: React.FC = () => {
           <nav className="flex p-6 pb-0">
             <TabButton id="overview" label="Overview" />
             <TabButton id="users" label="Users" count={users.length} />
-            <TabButton id="reviews" label="Reviews" count={recentReviews.length} />
+            <TabButton id="reviews" label="Reviews" count={reviews.length} />
             <TabButton id="requests" label="Requests" count={reviewRequests.length} />
           </nav>
         </div>
@@ -190,57 +312,48 @@ const AdminPanel: React.FC = () => {
         <div className="p-6">
           {activeTab === 'overview' && (
             <div className="space-y-6">
-              <div>
-                <h3 className={`text-lg font-semibold mb-4 ${
+              <div className="flex justify-between items-center">
+                <h3 className={`text-lg font-semibold ${
                   isDark ? 'text-white' : 'text-gray-900'
                 }`}>
-                  Recent Activity
+                  Dashboard Overview
                 </h3>
-                <div className="space-y-3">
-                  <div className={`p-3 rounded-lg ${
-                    isDark ? 'bg-gray-700' : 'bg-gray-50'
-                  }`}>
-                    <p className={`text-sm ${
-                      isDark ? 'text-gray-300' : 'text-gray-700'
-                    }`}>
-                      New review submitted for iPhone 15 Pro by John Doe
-                    </p>
-                    <p className={`text-xs ${
-                      isDark ? 'text-gray-400' : 'text-gray-500'
-                    }`}>
-                      2 hours ago
-                    </p>
-                  </div>
-                  <div className={`p-3 rounded-lg ${
-                    isDark ? 'bg-gray-700' : 'bg-gray-50'
-                  }`}>
-                    <p className={`text-sm ${
-                      isDark ? 'text-gray-300' : 'text-gray-700'
-                    }`}>
-                      Review request for Steam Deck OLED received
-                    </p>
-                    <p className={`text-xs ${
-                      isDark ? 'text-gray-400' : 'text-gray-500'
-                    }`}>
-                      4 hours ago
-                    </p>
-                  </div>
-                  <div className={`p-3 rounded-lg ${
-                    isDark ? 'bg-gray-700' : 'bg-gray-50'
-                  }`}>
-                    <p className={`text-sm ${
-                      isDark ? 'text-gray-300' : 'text-gray-700'
-                    }`}>
-                      New user registration: Sarah Wilson
-                    </p>
-                    <p className={`text-xs ${
-                      isDark ? 'text-gray-400' : 'text-gray-500'
-                    }`}>
-                      1 day ago
-                    </p>
-                  </div>
-                </div>
+                <button
+                  onClick={loadDashboardData}
+                  disabled={loading}
+                  className="flex items-center space-x-2 px-3 py-2 text-sm bg-blue-500 text-white rounded-lg hover:bg-blue-600 disabled:opacity-50 transition-colors"
+                >
+                  <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+                  <span>Refresh</span>
+                </button>
               </div>
+              
+              {dashboardStats?.recent_activity && dashboardStats.recent_activity.length > 0 ? (
+                <div className="space-y-3">
+                  {dashboardStats.recent_activity.map((activity, index) => (
+                    <div key={index} className={`p-3 rounded-lg ${
+                      isDark ? 'bg-gray-700' : 'bg-gray-50'
+                    }`}>
+                      <p className={`text-sm ${
+                        isDark ? 'text-gray-300' : 'text-gray-700'
+                      }`}>
+                        {activity.description || 'Recent activity'}
+                      </p>
+                      <p className={`text-xs ${
+                        isDark ? 'text-gray-400' : 'text-gray-500'
+                      }`}>
+                        {activity.timestamp ? new Date(activity.timestamp).toLocaleString() : 'Recently'}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className={`text-center py-8 ${
+                  isDark ? 'text-gray-400' : 'text-gray-500'
+                }`}>
+                  <p>No recent activity available</p>
+                </div>
+              )}
             </div>
           )}
 
@@ -250,49 +363,48 @@ const AdminPanel: React.FC = () => {
                 <h3 className={`text-lg font-semibold ${
                   isDark ? 'text-white' : 'text-gray-900'
                 }`}>
-                  User Management
+                  User Management ({users.length} users)
                 </h3>
+                <button
+                  onClick={loadDashboardData}
+                  disabled={loading}
+                  className="flex items-center space-x-2 px-3 py-2 text-sm bg-blue-500 text-white rounded-lg hover:bg-blue-600 disabled:opacity-50 transition-colors"
+                >
+                  <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+                  <span>Refresh</span>
+                </button>
               </div>
-              <div className="overflow-x-auto">
-                <table className="w-full">
-                  <thead>
-                    <tr className={`border-b ${
-                      isDark ? 'border-gray-700' : 'border-gray-200'
-                    }`}>
-                      <th className={`text-left py-3 px-4 font-medium ${
-                        isDark ? 'text-gray-300' : 'text-gray-700'
+              {users.length > 0 ? (
+                <div className="overflow-x-auto">
+                  <table className="w-full">
+                    <thead>
+                      <tr className={`border-b ${
+                        isDark ? 'border-gray-700' : 'border-gray-200'
                       }`}>
-                        User
-                      </th>
-                      <th className={`text-left py-3 px-4 font-medium ${
-                        isDark ? 'text-gray-300' : 'text-gray-700'
-                      }`}>
-                        Role
-                      </th>
-                      <th className={`text-left py-3 px-4 font-medium ${
-                        isDark ? 'text-gray-300' : 'text-gray-700'
-                      }`}>
-                        Reviews
-                      </th>
-                      <th className={`text-left py-3 px-4 font-medium ${
-                        isDark ? 'text-gray-300' : 'text-gray-700'
-                      }`}>
-                        Join Date
-                      </th>
-                      <th className={`text-left py-3 px-4 font-medium ${
-                        isDark ? 'text-gray-300' : 'text-gray-700'
-                      }`}>
-                        Status
-                      </th>
-                      <th className={`text-left py-3 px-4 font-medium ${
-                        isDark ? 'text-gray-300' : 'text-gray-700'
-                      }`}>
-                        Actions
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {users.map((user) => (
+                        <th className={`text-left py-3 px-4 font-medium ${
+                          isDark ? 'text-gray-300' : 'text-gray-700'
+                        }`}>
+                          User
+                        </th>
+                        <th className={`text-left py-3 px-4 font-medium ${
+                          isDark ? 'text-gray-300' : 'text-gray-700'
+                        }`}>
+                          Role
+                        </th>
+                        <th className={`text-left py-3 px-4 font-medium ${
+                          isDark ? 'text-gray-300' : 'text-gray-700'
+                        }`}>
+                          Created
+                        </th>
+                        <th className={`text-left py-3 px-4 font-medium ${
+                          isDark ? 'text-gray-300' : 'text-gray-700'
+                        }`}>
+                          Actions
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {users.map((user) => (
                       <tr key={user.id} className={`border-b ${
                         isDark ? 'border-gray-700' : 'border-gray-200'
                       }`}>
@@ -324,21 +436,7 @@ const AdminPanel: React.FC = () => {
                         <td className={`py-3 px-4 ${
                           isDark ? 'text-gray-300' : 'text-gray-700'
                         }`}>
-                          {user.reviews}
-                        </td>
-                        <td className={`py-3 px-4 ${
-                          isDark ? 'text-gray-300' : 'text-gray-700'
-                        }`}>
-                          {user.joinDate}
-                        </td>
-                        <td className="py-3 px-4">
-                          <span className={`inline-block px-2 py-1 text-xs font-medium rounded-full ${
-                            user.status === 'active'
-                              ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200'
-                              : 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200'
-                          }`}>
-                            {user.status}
-                          </span>
+                          {new Date(user.created_at).toLocaleDateString()}
                         </td>
                         <td className="py-3 px-4">
                           <div className="flex gap-2">
@@ -348,16 +446,28 @@ const AdminPanel: React.FC = () => {
                             <button className="p-1 text-gray-500 hover:text-gray-600">
                               <Edit className="w-4 h-4" />
                             </button>
-                            <button className="p-1 text-red-500 hover:text-red-600">
+                            <button 
+                              onClick={() => handleDeleteUser(user.id)}
+                              className="p-1 text-red-500 hover:text-red-600"
+                              title="Delete User"
+                            >
                               <Trash2 className="w-4 h-4" />
                             </button>
                           </div>
                         </td>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              ) : (
+                <div className={`text-center py-8 ${
+                  isDark ? 'text-gray-400' : 'text-gray-500'
+                }`}>
+                  <Users className="w-12 h-12 mx-auto mb-4 opacity-50" />
+                  <p>No users found</p>
+                </div>
+              )}
             </div>
           )}
 
@@ -367,11 +477,25 @@ const AdminPanel: React.FC = () => {
                 <h3 className={`text-lg font-semibold ${
                   isDark ? 'text-white' : 'text-gray-900'
                 }`}>
-                  Review Management
+                  Review Management ({reviews.length} reviews)
                 </h3>
+                <button
+                  onClick={loadDashboardData}
+                  disabled={loading}
+                  className="flex items-center space-x-2 px-3 py-2 text-sm bg-blue-500 text-white rounded-lg hover:bg-blue-600 disabled:opacity-50 transition-colors"
+                >
+                  <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+                  <span>Refresh</span>
+                </button>
               </div>
-              <div className="space-y-4">
-                {recentReviews.map((review) => (
+              {/* Debug info */}
+              <div className="mb-4 text-sm text-gray-500">
+                Reviews loaded: {reviews.length} | Loading: {loading ? 'Yes' : 'No'}
+              </div>
+              
+              {reviews.length > 0 ? (
+                <div className="space-y-4">
+                  {reviews.map((review) => (
                   <div key={review.id} className={`p-4 rounded-lg border ${
                     isDark ? 'border-gray-700' : 'border-gray-200'
                   }`}>
@@ -380,12 +504,12 @@ const AdminPanel: React.FC = () => {
                         <h4 className={`font-medium ${
                           isDark ? 'text-white' : 'text-gray-900'
                         }`}>
-                          {review.product}
+                          {review.product_name || 'Product'}
                         </h4>
                         <p className={`text-sm ${
                           isDark ? 'text-gray-400' : 'text-gray-600'
                         }`}>
-                          by {review.user} • {review.date}
+                          by {review.user_name || 'User'} • {new Date(review.created_at).toLocaleDateString()}
                         </p>
                         <div className="flex items-center gap-1 mt-1">
                           {[...Array(5)].map((_, i) => (
@@ -407,21 +531,43 @@ const AdminPanel: React.FC = () => {
                         <span className={`px-2 py-1 text-xs font-medium rounded-full ${
                           review.status === 'published'
                             ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200'
-                            : 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200'
+                            : review.status === 'pending'
+                            ? 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200'
+                            : 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200'
                         }`}>
                           {review.status}
                         </span>
-                        <button className="p-1 text-green-500 hover:text-green-600">
-                          <CheckCircle className="w-4 h-4" />
-                        </button>
-                        <button className="p-1 text-red-500 hover:text-red-600">
-                          <XCircle className="w-4 h-4" />
-                        </button>
+                        {review.status === 'pending' && (
+                          <>
+                            <button 
+                              onClick={() => handleApproveReview(review.id)}
+                              className="p-1 text-green-500 hover:text-green-600"
+                              title="Approve Review"
+                            >
+                              <CheckCircle className="w-4 h-4" />
+                            </button>
+                            <button 
+                              onClick={() => handleRejectReview(review.id)}
+                              className="p-1 text-red-500 hover:text-red-600"
+                              title="Reject Review"
+                            >
+                              <XCircle className="w-4 h-4" />
+                            </button>
+                          </>
+                        )}
                       </div>
                     </div>
                   </div>
                 ))}
-              </div>
+                </div>
+              ) : (
+                <div className={`text-center py-8 ${
+                  isDark ? 'text-gray-400' : 'text-gray-500'
+                }`}>
+                  <MessageSquare className="w-12 h-12 mx-auto mb-4 opacity-50" />
+                  <p>No reviews found</p>
+                </div>
+              )}
             </div>
           )}
 
@@ -431,11 +577,20 @@ const AdminPanel: React.FC = () => {
                 <h3 className={`text-lg font-semibold ${
                   isDark ? 'text-white' : 'text-gray-900'
                 }`}>
-                  Review Requests
+                  Review Requests ({reviewRequests.length} requests)
                 </h3>
+                <button
+                  onClick={loadDashboardData}
+                  disabled={loading}
+                  className="flex items-center space-x-2 px-3 py-2 text-sm bg-blue-500 text-white rounded-lg hover:bg-blue-600 disabled:opacity-50 transition-colors"
+                >
+                  <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+                  <span>Refresh</span>
+                </button>
               </div>
-              <div className="space-y-4">
-                {reviewRequests.map((request) => (
+              {reviewRequests.length > 0 ? (
+                <div className="space-y-4">
+                  {reviewRequests.map((request) => (
                   <div key={request.id} className={`p-4 rounded-lg border ${
                     isDark ? 'border-gray-700' : 'border-gray-200'
                   }`}>
@@ -444,21 +599,21 @@ const AdminPanel: React.FC = () => {
                         <h4 className={`font-medium ${
                           isDark ? 'text-white' : 'text-gray-900'
                         }`}>
-                          {request.product}
+                          {request.product_name}
                         </h4>
                         <p className={`text-sm ${
                           isDark ? 'text-gray-400' : 'text-gray-600'
                         }`}>
-                          Requested by {request.user}
+                          Requested by {request.user_email || 'User'}
                         </p>
                         <div className="flex items-center gap-2 mt-1">
                           <span className="text-sm text-blue-500">
-                            {request.category}
+                            {request.manufacturer}
                           </span>
                           <span className={`text-sm ${
                             isDark ? 'text-gray-400' : 'text-gray-600'
                           }`}>
-                            • {request.date}
+                            • {new Date(request.created_at).toLocaleDateString()}
                           </span>
                         </div>
                       </div>
@@ -470,17 +625,37 @@ const AdminPanel: React.FC = () => {
                         }`}>
                           {request.status}
                         </span>
-                        <button className="p-1 text-green-500 hover:text-green-600">
-                          <CheckCircle className="w-4 h-4" />
-                        </button>
-                        <button className="p-1 text-red-500 hover:text-red-600">
-                          <XCircle className="w-4 h-4" />
-                        </button>
+                        {request.status === 'pending' && (
+                          <>
+                            <button 
+                              onClick={() => handleApproveRequest(request.id)}
+                              className="p-1 text-green-500 hover:text-green-600"
+                              title="Approve Request"
+                            >
+                              <CheckCircle className="w-4 h-4" />
+                            </button>
+                            <button 
+                              onClick={() => handleRejectRequest(request.id)}
+                              className="p-1 text-red-500 hover:text-red-600"
+                              title="Reject Request"
+                            >
+                              <XCircle className="w-4 h-4" />
+                            </button>
+                          </>
+                        )}
                       </div>
                     </div>
                   </div>
                 ))}
-              </div>
+                </div>
+              ) : (
+                <div className={`text-center py-8 ${
+                  isDark ? 'text-gray-400' : 'text-gray-500'
+                }`}>
+                  <TrendingUp className="w-12 h-12 mx-auto mb-4 opacity-50" />
+                  <p>No review requests found</p>
+                </div>
+              )}
             </div>
           )}
         </div>

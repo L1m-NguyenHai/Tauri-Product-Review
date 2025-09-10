@@ -9,7 +9,7 @@ LimReview API được xây dựng với FastAPI và cung cấp RESTful endpoint
 **API Documentation**: `http://localhost:8000/docs` (Swagger UI)
 **Alternative Documentation**: `http://localhost:8000/redoc`
 
-> **Lưu ý**: Tất cả API endpoints sử dụng prefix `/api/v1` trừ các endpoints đặc biệt như docs, health check.
+> **Lưu ý**: Tất cả business API endpoints sử dụng prefix `/api/v1` trừ các system endpoints như docs, health check.
 
 ## Authentication
 
@@ -80,6 +80,12 @@ Làm mới access token (requires authentication).
 ### POST `/api/v1/auth/logout`
 Đăng xuất (client-side logout).
 
+### POST `/api/v1/auth/logout-server`
+Server-side logout - invalidate token trên server (requires authentication).
+
+### POST `/api/v1/auth/logout-all`
+Đăng xuất khỏi tất cả devices (requires authentication).
+
 ---
 
 ## User Management Endpoints
@@ -134,6 +140,12 @@ Lấy danh sách followers (requires authentication).
 ### GET `/api/v1/users/following`
 Lấy danh sách following (requires authentication).
 
+### GET `/api/v1/users/`
+Lấy danh sách tất cả users (requires admin).
+
+### DELETE `/api/v1/users/{user_id}`
+Xóa user account (requires admin).
+
 ---
 
 ## Product Management Endpoints
@@ -183,7 +195,7 @@ Lấy danh sách sản phẩm với filtering và pagination.
 ```
 
 ### GET `/api/v1/products/{product_id}`
-Lấy chi tiết sản phẩm.
+Lấy chi tiết sản phẩm bao gồm features, images, specifications.
 
 ### POST `/api/v1/products/`
 Tạo sản phẩm mới (requires admin).
@@ -194,17 +206,65 @@ Cập nhật sản phẩm (requires admin).
 ### DELETE `/api/v1/products/{product_id}`
 Xóa sản phẩm (requires admin).
 
-### GET `/api/v1/products/{product_id}/features`
-Lấy danh sách tính năng của sản phẩm.
-
 ### POST `/api/v1/products/{product_id}/features`
 Thêm tính năng cho sản phẩm (requires admin).
 
-### GET `/api/v1/products/{product_id}/images`
-Lấy danh sách hình ảnh sản phẩm.
+**Request Body:**
+```json
+{
+  "feature_text": "Wireless charging support",
+  "sort_order": 1
+}
+```
+
+### DELETE `/api/v1/products/features/{feature_id}`
+Xóa tính năng sản phẩm (requires admin).
 
 ### POST `/api/v1/products/{product_id}/images`
-Upload hình ảnh sản phẩm (requires admin).
+Thêm hình ảnh sản phẩm (requires admin).
+
+**Request Body:**
+```json
+{
+  "image_url": "https://example.com/image.jpg",
+  "alt_text": "Product front view",
+  "sort_order": 1
+}
+```
+
+### DELETE `/api/v1/products/images/{image_id}`
+Xóa hình ảnh sản phẩm (requires admin).
+
+### POST `/api/v1/products/{product_id}/specifications`
+Thêm thông số kỹ thuật (requires admin).
+
+**Request Body:**
+```json
+{
+  "spec_name": "Display Size",
+  "spec_value": "6.1 inches",
+  "sort_order": 1
+}
+```
+
+### DELETE `/api/v1/products/specifications/{spec_id}`
+Xóa thông số kỹ thuật (requires admin).
+
+### POST `/api/v1/products/{product_id}/store-links`
+Thêm link cửa hàng (requires admin).
+
+**Request Body:**
+```json
+{
+  "store_name": "Amazon",
+  "store_url": "https://amazon.com/product",
+  "price": 99.99,
+  "currency": "USD"
+}
+```
+
+### DELETE `/api/v1/products/store-links/{link_id}`
+Xóa link cửa hàng (requires admin).
 
 ---
 
@@ -254,36 +314,107 @@ Vote review hữu ích (requires authentication).
 }
 ```
 
-### GET `/api/v1/reviews/{review_id}/pros`
-Lấy danh sách ưu điểm của review.
-
 ### POST `/api/v1/reviews/{review_id}/pros`
 Thêm ưu điểm cho review (requires authentication).
 
-### GET `/api/v1/reviews/{review_id}/cons`
-Lấy danh sách nhược điểm của review.
+**Request Body:**
+```json
+{
+  "pro_text": "Excellent battery life"
+}
+```
 
 ### POST `/api/v1/reviews/{review_id}/cons`
 Thêm nhược điểm cho review (requires authentication).
 
-### GET `/api/v1/reviews/{review_id}/media`
-Lấy danh sách media (hình ảnh, video) của review.
+**Request Body:**
+```json
+{
+  "con_text": "Camera could be better in low light"
+}
+```
 
 ### POST `/api/v1/reviews/{review_id}/media`
-Upload media cho review (requires authentication).
+Thêm media URL cho review (requires authentication).
+
+**Request Body:**
+```json
+{
+  "media_url": "https://example.com/image.jpg",
+  "media_type": "image",
+  "alt_text": "Product in use"
+}
+```
+
+### POST `/api/v1/reviews/{review_id}/media/upload`
+Upload media file trực tiếp (requires authentication).
+
+**Request:** Multipart form với file upload
+
+### DELETE `/api/v1/reviews/{review_id}/helpful`
+Hủy vote helpful (requires authentication).
+
+### GET `/api/v1/reviews/pending`
+Lấy reviews đang chờ duyệt (requires admin).
+
+### PUT `/api/v1/reviews/{review_id}/approve`
+Duyệt review (requires admin).
+
+### PUT `/api/v1/reviews/{review_id}/reject`
+Từ chối review (requires admin).
+
+### GET `/api/v1/reviews/{review_id}/comments`
+Lấy comments của review.
+
+### POST `/api/v1/reviews/{review_id}/comments`
+Thêm comment vào review (requires authentication).
+
+**Request Body:**
+```json
+{
+  "content": "Great review, very helpful!"
+}
+```
+
+### PUT `/api/v1/reviews/comments/{comment_id}`
+Cập nhật comment (requires authentication - chỉ owner).
+
+### DELETE `/api/v1/reviews/comments/{comment_id}`
+Xóa comment (requires authentication - chỉ owner hoặc admin).
 
 ---
 
 ## Category Endpoints
 
 ### GET `/api/v1/categories/`
-Lấy danh sách categories.
+Lấy danh sách tất cả categories.
 
 ### GET `/api/v1/categories/{category_id}`
-Lấy chi tiết category.
+Lấy chi tiết category theo ID.
+
+### GET `/api/v1/categories/slug/{slug}`
+Lấy category theo slug.
+
+### GET `/api/v1/categories/{category_id}/products`
+Lấy danh sách sản phẩm trong category.
+
+**Query Parameters:**
+- `limit`: Số lượng kết quả (default: 20)
+- `offset`: Vị trí bắt đầu (default: 0)
+- `sort_by`: Sắp xếp theo (default: "created_at")
+- `sort_order`: Thứ tự (asc/desc, default: "desc")
 
 ### POST `/api/v1/categories/`
 Tạo category mới (requires admin).
+
+**Request Body:**
+```json
+{
+  "name": "Electronics",
+  "slug": "electronics",
+  "description": "Electronic devices and gadgets"
+}
+```
 
 ### PUT `/api/v1/categories/{category_id}`
 Cập nhật category (requires admin).
@@ -321,6 +452,38 @@ Cập nhật yêu cầu review (requires admin).
 ### DELETE `/api/v1/review-requests/{request_id}`
 Xóa yêu cầu review (requires authentication).
 
+### GET `/api/v1/review-requests/admin/all`
+Lấy tất cả review requests (requires admin).
+
+### GET `/api/v1/review-requests/admin/pending`
+Lấy review requests đang chờ xử lý (requires admin).
+
+### PUT `/api/v1/review-requests/admin/{request_id}/approve`
+Duyệt review request (requires admin).
+
+### PUT `/api/v1/review-requests/admin/{request_id}/reject`
+Từ chối review request (requires admin).
+
+**Request Body:**
+```json
+{
+  "admin_notes": "Request does not meet criteria"
+}
+```
+
+### PUT `/api/v1/review-requests/admin/{request_id}/complete`
+Đánh dấu hoàn thành review request (requires admin).
+
+### PUT `/api/v1/review-requests/admin/{request_id}/notes`
+Cập nhật admin notes (requires admin).
+
+**Request Body:**
+```json
+{
+  "admin_notes": "Updated notes from admin"
+}
+```
+
 ---
 
 ## Contact Endpoints
@@ -339,14 +502,52 @@ Gửi tin nhắn contact.
 ```
 
 ### GET `/api/v1/contact/`
-Lấy danh sách contact submissions (requires admin).
+Lấy danh sách tất cả contact submissions (requires admin).
+
+### GET `/api/v1/contact/unread`
+Lấy danh sách contact submissions chưa đọc (requires admin).
+
+### GET `/api/v1/contact/{message_id}`
+Lấy chi tiết contact message (requires admin).
+
+### PUT `/api/v1/contact/{message_id}/mark-read`
+Đánh dấu đã đọc (requires admin).
+
+### PUT `/api/v1/contact/{message_id}/mark-replied`
+Đánh dấu đã trả lời (requires admin).
+
+### PUT `/api/v1/contact/{message_id}/status`
+Cập nhật trạng thái message (requires admin).
+
+**Request Body:**
+```json
+{
+  "status": "resolved"
+}
+```
+
+### DELETE `/api/v1/contact/{message_id}`
+Xóa contact message (requires admin).
+
+### GET `/api/v1/contact/stats/summary`
+Lấy thống kê contact messages (requires admin).
+
+**Response:**
+```json
+{
+  "total_messages": 150,
+  "unread_count": 10,
+  "pending_count": 5,
+  "resolved_count": 135
+}
+```
 
 ---
 
 ## Admin Endpoints
 
-### GET `/api/v1/admin/stats`
-Lấy thống kê hệ thống (requires admin).
+### GET `/api/v1/admin/dashboard`
+Lấy dashboard statistics tổng quan (requires admin).
 
 **Response:**
 ```json
@@ -354,21 +555,114 @@ Lấy thống kê hệ thống (requires admin).
   "total_users": 1000,
   "total_products": 500,
   "total_reviews": 2500,
-  "total_review_requests": 100,
-  "recent_activity": [...],
-  "top_rated_products": [...],
-  "active_users": [...]
+  "total_categories": 25,
+  "pending_reviews": 15,
+  "recent_registrations": 50,
+  "average_rating": 4.2,
+  "top_categories": [...],
+  "recent_activity": [...]
 }
 ```
 
-### GET `/api/v1/admin/users`
-Quản lý users (requires admin).
+### GET `/api/v1/admin/analytics/products`
+Phân tích sản phẩm chi tiết (requires admin).
 
-### GET `/api/v1/admin/products`
-Quản lý products (requires admin).
+**Query Parameters:**
+- `period`: Khoảng thời gian (7d, 30d, 90d, 1y)
+- `category_id`: Lọc theo category
 
-### GET `/api/v1/admin/reviews`
-Quản lý reviews (requires admin).
+### GET `/api/v1/admin/analytics/reviews`
+Phân tích reviews chi tiết (requires admin).
+
+### GET `/api/v1/admin/analytics/users`
+Phân tích users và engagement (requires admin).
+
+### GET `/api/v1/admin/analytics/engagement`
+Phân tích user engagement metrics (requires admin).
+
+### GET `/api/v1/admin/system/health`
+Kiểm tra tình trạng hệ thống (requires admin).
+
+**Response:**
+```json
+{
+  "database": {
+    "status": "healthy",
+    "connection_count": 10,
+    "query_performance": "good"
+  },
+  "storage": {
+    "disk_usage": "45%",
+    "available_space": "500GB"
+  },
+  "performance": {
+    "avg_response_time": "150ms",
+    "requests_per_minute": 120
+  }
+}
+```
+
+### POST `/api/v1/admin/maintenance/cleanup-orphaned`
+Dọn dẹp dữ liệu orphaned (requires admin).
+
+### GET `/api/v1/admin/logs/recent`
+Lấy logs gần đây (requires admin).
+
+**Query Parameters:**
+- `limit`: Số lượng logs (default: 100)
+- `level`: Mức độ log (info, warning, error)
+
+---
+
+## System Endpoints
+
+### GET `/`
+Root endpoint với thông tin API.
+
+**Response:**
+```json
+{
+  "message": "Product Review API",
+  "version": "1.0.0",
+  "status": "operational",
+  "documentation": "/docs",
+  "openapi_schema": "/openapi.json"
+}
+```
+
+### GET `/health`
+Health check endpoint.
+
+**Response:**
+```json
+{
+  "status": "healthy",
+  "database": "connected",
+  "timestamp": 1640995200.0
+}
+```
+
+### GET `/version`
+Thông tin version API.
+
+**Response:**
+```json
+{
+  "version": "1.0.0",
+  "build": "production",
+  "features": [
+    "authentication",
+    "user_management",
+    "product_management",
+    "review_system",
+    "admin_dashboard",
+    "analytics"
+  ]
+}
+```
+
+### GET `/uploads/{file_path}`
+Static file serving cho uploads (avatars, media files).
 
 ---
 
@@ -422,9 +716,7 @@ Quản lý reviews (requires admin).
 ## WebSocket Support
 
 ### Real-time Updates
-- **Endpoint**: `ws://localhost:8000/api/v1/ws`
-- **Events**: New reviews, rating updates, user activities
-- **Authentication**: Token in query parameter
+> **Lưu ý**: WebSocket endpoints chưa được implement trong version hiện tại.
 
 ---
 
