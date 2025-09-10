@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Users, MessageSquare, Package, TrendingUp, Eye, Edit, Trash2, CheckCircle, XCircle, Loader2, RefreshCw } from 'lucide-react';
+import ReviewerBadge from '../components/ReviewerBadge';
 import { useTheme } from '../contexts/ThemeContext';
 import { useAuth } from '../contexts/AuthContext';
 import { adminAPI, type User, type Review, type ReviewRequest, type DashboardStats } from '../services/api';
@@ -121,6 +122,21 @@ const AdminPanel: React.FC = () => {
     } catch (err) {
       console.error('Failed to delete user:', err);
       showNotification('error', 'Failed to delete user');
+    }
+  };
+
+  const handleUpdateUserRole = async (userId: string, newRole: 'user' | 'reviewer') => {
+    try {
+      await adminAPI.updateUserRole(userId, newRole);
+      setUsers(prev => prev.map(user => 
+        user.id === userId 
+          ? { ...user, role: newRole }
+          : user
+      ));
+      showNotification('success', `User role updated to ${newRole}`);
+    } catch (err) {
+      console.error('Failed to update user role:', err);
+      showNotification('error', 'Failed to update user role');
     }
   };
 
@@ -410,10 +426,13 @@ const AdminPanel: React.FC = () => {
                       }`}>
                         <td className="py-3 px-4">
                           <div>
-                            <div className={`font-medium ${
+                            <div className={`flex items-center gap-2 font-medium ${
                               isDark ? 'text-white' : 'text-gray-900'
                             }`}>
-                              {user.name}
+                              <span>{user.name}</span>
+                              {user.role === 'reviewer' && (
+                                <ReviewerBadge size="sm" showText={false} />
+                              )}
                             </div>
                             <div className={`text-sm ${
                               isDark ? 'text-gray-400' : 'text-gray-500'
@@ -423,15 +442,24 @@ const AdminPanel: React.FC = () => {
                           </div>
                         </td>
                         <td className="py-3 px-4">
-                          <span className={`inline-block px-2 py-1 text-xs font-medium rounded-full ${
-                            user.role === 'admin'
-                              ? 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200'
-                              : user.role === 'reviewer'
-                              ? 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200'
-                              : 'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-200'
-                          }`}>
-                            {user.role}
-                          </span>
+                          {user.role === 'admin' ? (
+                            <span className="inline-block px-2 py-1 text-xs font-medium rounded-full bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200">
+                              admin
+                            </span>
+                          ) : (
+                            <select
+                              value={user.role}
+                              onChange={(e) => handleUpdateUserRole(user.id, e.target.value as 'user' | 'reviewer')}
+                              className={`text-xs px-2 py-1 rounded border ${
+                                isDark 
+                                  ? 'bg-gray-700 border-gray-600 text-gray-200' 
+                                  : 'bg-white border-gray-300 text-gray-700'
+                              } focus:ring-2 focus:ring-blue-500 focus:border-blue-500`}
+                            >
+                              <option value="user">user</option>
+                              <option value="reviewer">reviewer</option>
+                            </select>
+                          )}
                         </td>
                         <td className={`py-3 px-4 ${
                           isDark ? 'text-gray-300' : 'text-gray-700'

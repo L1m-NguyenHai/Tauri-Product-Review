@@ -6,6 +6,7 @@ import { useAuth } from '../contexts/AuthContext';
 import LazyImage from '../components/LazyImage';
 import ConfirmDialog from '../components/ConfirmDialog';
 import ReviewModal from '../components/ReviewModal/ReviewModal';
+import ReviewerBadge from '../components/ReviewerBadge';
 
 const ProductDetail: React.FC = () => {
   const { id } = useParams<{ id: string }>();
@@ -663,7 +664,12 @@ const ProductDetail: React.FC = () => {
         }
       }
 
-      alert('Đánh giá đã được gửi thành công!');
+      // Different messages based on user role
+      if (user?.role === 'reviewer') {
+        alert('Đánh giá đã được gửi và tự động xuất bản thành công!');
+      } else {
+        alert('Đánh giá đã được gửi thành công và đang chờ admin duyệt!');
+      }
     } catch (error) {
       console.error('Error submitting review:', error);
       alert('Đã xảy ra lỗi khi gửi đánh giá. Vui lòng thử lại sau.');
@@ -1088,9 +1094,15 @@ const ProductDetail: React.FC = () => {
                   />
                   <div className="flex-1 min-w-0">
                     <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mb-1">
-                      <span className={`font-medium text-sm ${isDark ? 'text-white' : 'text-gray-900'}`}>
-                        {review.user_name || "Anonymous"}
-                      </span>
+                      <div className="flex items-center gap-1">
+                        <span className={`font-medium text-sm ${isDark ? 'text-white' : 'text-gray-900'}`}>
+                          {review.user_name || "Anonymous"}
+                        </span>
+                        {/* Reviewer Badge - Special star for reviewers */}
+                        {review.user_role === 'reviewer' && (
+                          <ReviewerBadge size="md" className="ml-2" />
+                        )}
+                      </div>
                       <div className="flex items-center">
                         {[...Array(5)].map((_, i) => (
                           <Star
@@ -1341,9 +1353,15 @@ const ProductDetail: React.FC = () => {
                               />
                               <div className="flex-1 min-w-0">
                                 <div className="flex items-center gap-2">
-                                  <span className={`font-medium text-xs ${isDark ? 'text-white' : 'text-gray-900'}`}>
-                                    {reply.user_name || 'Anonymous'}
-                                  </span>
+                                  <div className="flex items-center gap-1">
+                                    <span className={`font-medium text-xs ${isDark ? 'text-white' : 'text-gray-900'}`}>
+                                      {reply.user_name || 'Anonymous'}
+                                    </span>
+                                    {/* Reviewer Badge for replies */}
+                                    {reply.user_role === 'reviewer' && (
+                                      <ReviewerBadge size="sm" className="ml-1" />
+                                    )}
+                                  </div>
                                   <span className={`text-xs ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>
                                     {reply.created_at ? new Date(reply.created_at).toLocaleDateString('vi-VN') : ''}
                                   </span>

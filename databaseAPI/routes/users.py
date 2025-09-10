@@ -1,11 +1,12 @@
 from fastapi import APIRouter, HTTPException, status, Depends, Query, File, UploadFile, Form
+from pydantic import BaseModel
 from typing import List, Optional
 import tempfile
 import os
 import shutil
 from models.schemas import (
     UserResponse, UserUpdate, UserFollowCreate, UserFollowResponse,
-    PaginationParams
+    PaginationParams, UserRoleUpdate
 )
 from auth.security import get_current_user, get_current_admin_user
 from database.connection import get_conn, put_conn
@@ -482,6 +483,73 @@ def list_all_users(
     except Exception as e:
         logger.exception("Error listing users: %s", e)
         raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        put_conn(conn)
+
+class RoleUpdateRequest(BaseModel):
+    role: str
+
+@router.put("/{user_id}/role")
+def update_user_role(
+    user_id: str,
+    role_update: RoleUpdateRequest,
+    current_admin: dict = Depends(get_current_admin_user)
+):
+    """Update user role (admin only)"""
+    if str(current_admin["id"]) == user_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Cannot change your own role"
+        )
+    
+    role = role_update.role
+    
+    # Validate role
+    valid_roles = ["user", "reviewer"]
+    if role not in valid_roles:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Invalid role. Must be one of: {', '.join(valid_roles)}"
+        )
+    
+    conn = get_conn()
+    try:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            logger.info(f"Updating user {user_id} role to {role}")
+            
+            # First check if user exists
+            cur.execute("SELECT id, role FROM users WHERE id = %s", (user_id,))
+            existing_user = cur.fetchone()
+            
+            if not existing_user:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="User not found"
+                )
+            
+            logger.info(f"Found user {user_id}, current role: {existing_user['role']}")
+            
+            # Update the role
+            cur.execute("""
+                UPDATE users 
+                SET role = %s, updated_at = CURRENT_TIMESTAMP
+                WHERE id = %s
+                RETURNING *
+            """, (role, user_id))
+            
+            updated_user = cur.fetchone()
+            conn.commit()
+            
+            logger.info(f"Successfully updated user {user_id} role to {role}")
+            return updated_user
+            
+    except HTTPException:
+        conn.rollback()
+        raise
+    except Exception as e:
+        conn.rollback()
+        logger.exception("Error updating user role: %s", e)
+        raise HTTPException(status_code=500, detail=f"Failed to update user role: {str(e)}")
     finally:
         put_conn(conn)
 

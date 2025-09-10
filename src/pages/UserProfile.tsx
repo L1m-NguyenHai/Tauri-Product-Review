@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Camera, Edit, Star, Calendar, Award, TrendingUp } from 'lucide-react';
+import { Camera, Edit, Star, Calendar, Award, TrendingUp, X } from 'lucide-react';
 import { useTheme } from '../contexts/ThemeContext';
 import { useAuth } from '../contexts/AuthContext';
+import EditableUserName from '../components/EditableUserName';
 
 const UserProfile: React.FC = () => {
   const { isDark } = useTheme();
@@ -18,106 +19,81 @@ const UserProfile: React.FC = () => {
   });
   const [loading, setLoading] = useState(true);
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
+  const [mediaPreview, setMediaPreview] = useState<{url: string, type: string} | null>(null);
+
 
   // Handle avatar upload
   const handleAvatarUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    if (!file) return;
-
-    // Validate file type
-    if (!file.type.startsWith('image/')) {
-      alert('Please select an image file');
-      return;
-    }
-
-    // Validate file size (5MB)
-    if (file.size > 5 * 1024 * 1024) {
-      alert('File size must be less than 5MB');
-      return;
-    }
-
+    if (!event.target.files || event.target.files.length === 0) return;
+    const file = event.target.files[0];
+    const formData = new FormData();
+    formData.append('avatar', file);
     setUploadingAvatar(true);
     try {
-      const accessToken = localStorage.getItem('access_token');
       const tokenType = localStorage.getItem('token_type');
-      
-      if (!accessToken || !tokenType) {
-        navigate('/login');
-        return;
-      }
-
-      const formData = new FormData();
-      formData.append('file', file);
-
-      const response = await fetch('http://127.0.0.1:8000/api/v1/users/profile/avatar', {
+      const accessToken = localStorage.getItem('access_token');
+      const response = await fetch(`http://127.0.0.1:8000/api/v1/users/profile/avatar`, {
         method: 'POST',
         headers: {
           'Authorization': `${tokenType} ${accessToken}`
         },
         body: formData
-      });
-
+      } as any); // 'as any' to avoid TS error for headers+body
       if (response.ok) {
-        // Refresh the page or update user context
+        // Reload page or refetch user info
         window.location.reload();
       } else {
-        const errorData = await response.json();
-        alert(`Upload failed: ${errorData.detail || 'Unknown error'}`);
+        alert('Failed to upload avatar');
       }
     } catch (error) {
       console.error('Error uploading avatar:', error);
-      alert('Failed to upload avatar. Please try again.');
+      alert('Error uploading avatar');
     } finally {
       setUploadingAvatar(false);
-      // Reset the input
-      event.target.value = '';
     }
   };
 
-  // Redirect to login if not authenticated
   useEffect(() => {
-    if (!user) {
-      navigate('/login');
-    }
-  }, [user, navigate]);
-
-  // Fetch user data and reviews
-  useEffect(() => {
+    if (!user) return;
     const fetchUserData = async () => {
-      if (!user) return;
-      
       setLoading(true);
       try {
-        const accessToken = localStorage.getItem('access_token');
         const tokenType = localStorage.getItem('token_type');
-        
-        if (!accessToken || !tokenType) {
-          navigate('/login');
-          return;
-        }
-
+        const accessToken = localStorage.getItem('access_token');
         // Fetch user statistics
         const statsResponse = await fetch(`http://127.0.0.1:8000/api/v1/users/profile/stats`, {
           headers: {
             'Authorization': `${tokenType} ${accessToken}`
           }
         });
-        
         if (statsResponse.ok) {
           const statsData = await statsResponse.json();
           setUserStats(statsData);
         }
-
         // Fetch user reviews
         const reviewsResponse = await fetch(`http://127.0.0.1:8000/api/v1/users/${user.id}/reviews`, {
           headers: {
             'Authorization': `${tokenType} ${accessToken}`
           }
         });
-        
         if (reviewsResponse.ok) {
           const reviewsData = await reviewsResponse.json();
-          setUserReviews(reviewsData.items || []);
+          // Lấy media của từng review từ API review detail (giống ProductDetail)
+          const reviewsWithMedia = await Promise.all(
+            (reviewsData.items || []).map(async (review: any) => {
+              try {
+                const detailRes = await fetch(`http://127.0.0.1:8000/api/v1/reviews/${review.id}`);
+                if (detailRes.ok) {
+                  const detail = await detailRes.json();
+                  return { ...review, ...detail };
+                }
+              } catch (e) {
+                console.error('Error fetching review detail:', e);
+              }
+              return review;
+            })
+          );
+          setUserReviews(reviewsWithMedia);
         }
       } catch (error) {
         console.error('Error fetching user data:', error);
@@ -125,7 +101,6 @@ const UserProfile: React.FC = () => {
         setLoading(false);
       }
     };
-
     fetchUserData();
   }, [user, navigate]);
 
@@ -192,26 +167,8 @@ const UserProfile: React.FC = () => {
           <div className="flex-1">
             <div className="flex items-start justify-between mb-4">
               <div>
-                <h1 className={`text-3xl font-bold ${
-                  isDark ? 'text-white' : 'text-gray-900'
-                }`}>
-                  {user.name}
-                </h1>
-                <p className={`text-lg ${
-                  isDark ? 'text-gray-400' : 'text-gray-600'
-                }`}>
-                  {user.email}
-                </p>
-                {user.role === 'admin' && (
-                  <span className="inline-block mt-2 px-3 py-1 text-xs font-medium bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200 rounded-full">
-                    Admin
-                  </span>
-                )}
+                <EditableUserName name={user.name} isDark={isDark} email={user.email} role={user.role} />
               </div>
-              <button className="flex items-center gap-2 px-4 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded-lg transition-colors">
-                <Edit className="w-4 h-4" />
-                Edit Profile
-              </button>
             </div>
 
             <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
@@ -268,81 +225,7 @@ const UserProfile: React.FC = () => {
         </div>
       </div>
 
-      {/* Achievements */}
-      <div className={`rounded-xl p-6 ${
-        isDark ? 'bg-gray-800' : 'bg-white'
-      } shadow-sm`}>
-        <h2 className={`text-xl font-semibold mb-4 ${
-          isDark ? 'text-white' : 'text-gray-900'
-        }`}>
-          Achievements
-        </h2>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <div className={`p-4 rounded-lg border ${
-            isDark ? 'border-gray-700 bg-gray-700' : 'border-gray-200 bg-gray-50'
-          }`}>
-            <div className="flex items-center gap-3">
-              <div className="p-2 bg-yellow-500 rounded-lg">
-                <Award className="w-5 h-5 text-white" />
-              </div>
-              <div>
-                <h3 className={`font-medium ${
-                  isDark ? 'text-white' : 'text-gray-900'
-                }`}>
-                  Top Reviewer
-                </h3>
-                <p className={`text-sm ${
-                  isDark ? 'text-gray-400' : 'text-gray-600'
-                }`}>
-                  20+ helpful reviews
-                </p>
-              </div>
-            </div>
-          </div>
-          <div className={`p-4 rounded-lg border ${
-            isDark ? 'border-gray-700 bg-gray-700' : 'border-gray-200 bg-gray-50'
-          }`}>
-            <div className="flex items-center gap-3">
-              <div className="p-2 bg-blue-500 rounded-lg">
-                <Star className="w-5 h-5 text-white" />
-              </div>
-              <div>
-                <h3 className={`font-medium ${
-                  isDark ? 'text-white' : 'text-gray-900'
-                }`}>
-                  Quality Contributor
-                </h3>
-                <p className={`text-sm ${
-                  isDark ? 'text-gray-400' : 'text-gray-600'
-                }`}>
-                  High-quality reviews
-                </p>
-              </div>
-            </div>
-          </div>
-          <div className={`p-4 rounded-lg border ${
-            isDark ? 'border-gray-700 bg-gray-700' : 'border-gray-200 bg-gray-50'
-          }`}>
-            <div className="flex items-center gap-3">
-              <div className="p-2 bg-green-500 rounded-lg">
-                <TrendingUp className="w-5 h-5 text-white" />
-              </div>
-              <div>
-                <h3 className={`font-medium ${
-                  isDark ? 'text-white' : 'text-gray-900'
-                }`}>
-                  Rising Star
-                </h3>
-                <p className={`text-sm ${
-                  isDark ? 'text-gray-400' : 'text-gray-600'
-                }`}>
-                  Fast-growing reviewer
-                </p>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
+      {/* Achievements section removed */}
 
       {/* Content Tabs */}
       <div className={`rounded-xl ${
@@ -388,8 +271,48 @@ const UserProfile: React.FC = () => {
                     isDark ? 'border-gray-700' : 'border-gray-200'
                   }`}>
                     <div className="flex gap-4">
-                      <div className="w-16 h-12 bg-gray-200 dark:bg-gray-700 rounded-lg flex items-center justify-center">
-                        <span className="text-xs text-gray-500">No Image</span>
+                      <div className="w-16 h-12 bg-gray-200 dark:bg-gray-700 rounded-lg flex items-center justify-center overflow-hidden">
+                        {(() => {
+                          if (Array.isArray(review.media) && review.media.length > 0) {
+                            const m = review.media[0];
+                            
+                            if (m.media_type?.startsWith('image')) {
+                              return (
+                                <img
+                                  src={m.media_url}
+                                  alt={review.product_name}
+                                  className="w-full h-full object-cover cursor-pointer"
+                                  onClick={() => setMediaPreview({ url: m.media_url, type: m.media_type })}
+                                />
+                              );
+                            } else if (m.media_type?.startsWith('video')) {
+                              return (
+                                <button
+                                  className="w-full h-full bg-gray-800 flex items-center justify-center border-none p-0 cursor-pointer relative"
+                                  onClick={() => setMediaPreview({ url: m.media_url, type: m.media_type })}
+                                  title="Xem video"
+                                >
+                                  {m.thumbnail ? (
+                                    <img 
+                                      src={m.thumbnail} 
+                                      alt="Video thumbnail" 
+                                      className="w-full h-full object-cover"
+                                    />
+                                  ) : (
+                                    <span className="text-white text-2xl">▶</span>
+                                  )}
+                                  <div className="absolute inset-0 bg-black bg-opacity-20 flex items-center justify-center">
+                                    <span className="text-white text-lg">▶</span>
+                                  </div>
+                                </button>
+                              );
+                            } else {
+                              return <span className="text-xs text-gray-500">Unknown Media</span>;
+                            }
+                          } else {
+                            return <span className="text-xs text-gray-500">No Image</span>;
+                          }
+                        })()}
                       </div>
                       <div className="flex-1">
                         <div className="flex items-start justify-between">
@@ -460,6 +383,46 @@ const UserProfile: React.FC = () => {
           )}
         </div>
       </div>
+      
+      {/* Media Preview Modal */}
+      {mediaPreview && (
+        <div 
+          className="fixed inset-0 bg-black bg-opacity-90 z-50 flex items-center justify-center"
+          onClick={() => setMediaPreview(null)}
+        >
+          <div className="absolute top-4 right-4">
+            <button 
+              className="text-white p-2 rounded-full hover:bg-white hover:bg-opacity-20 transition-colors"
+              onClick={(e) => {
+                e.stopPropagation();
+                setMediaPreview(null);
+              }}
+              aria-label="Close media preview"
+            >
+              <X size={24} />
+            </button>
+          </div>
+          
+          <div className="max-w-4xl max-h-[90vh] p-4">
+            {mediaPreview.type.includes('image') ? (
+              <img 
+                src={mediaPreview.url} 
+                alt="Media preview" 
+                className="max-w-full max-h-[85vh] object-contain"
+              />
+            ) : mediaPreview.type.includes('video') ? (
+              <video 
+                src={mediaPreview.url} 
+                controls 
+                autoPlay 
+                className="max-w-full max-h-[85vh]"
+              />
+            ) : (
+              <div className="text-white">Unsupported media type</div>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 };

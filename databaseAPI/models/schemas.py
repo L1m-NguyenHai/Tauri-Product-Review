@@ -17,6 +17,16 @@ class UserUpdate(BaseModel):
     name: Optional[str] = None
     avatar: Optional[str] = None
 
+class UserRoleUpdate(BaseModel):
+    role: str
+    
+    @validator('role')
+    def validate_role(cls, v):
+        valid_roles = ['user', 'reviewer']
+        if v not in valid_roles:
+            raise ValueError(f'Invalid role. Must be one of: {", ".join(valid_roles)}')
+        return v
+
 class UserLogin(BaseModel):
     email: EmailStr
     password: str

@@ -6,11 +6,12 @@ interface User {
   email: string;
   name: string;
   avatar?: string;
-  role: 'user' | 'admin';
+  role: 'user' | 'admin' | 'reviewer';
 }
 
 interface AuthContextType {
   user: User | null;
+  setUser?: React.Dispatch<React.SetStateAction<User | null>>;
   login: (email: string, password: string) => Promise<boolean>;
   register: (name: string, email: string, password: string) => Promise<boolean>;
   logout: () => void;
@@ -139,7 +140,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const isAdmin = user?.role === 'admin';
 
   return (
-    <AuthContext.Provider value={{ user, login, register, logout, isAdmin }}>
+    <AuthContext.Provider value={{ user, setUser, login, register, logout, isAdmin }}>
       {children}
     </AuthContext.Provider>
   );

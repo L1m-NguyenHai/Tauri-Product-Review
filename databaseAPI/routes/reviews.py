@@ -74,6 +74,7 @@ def list_reviews(
                 SELECT 
                     r.*,
                     u.name as user_name,
+                    u.role as user_role,
                     p.name as product_name
                 FROM reviews r
                 JOIN users u ON r.user_id = u.id
@@ -105,6 +106,7 @@ def get_review(review_id: str):
                 SELECT 
                     r.*,
                     u.name as user_name,
+                    u.role as user_role,
                     p.name as product_name
                 FROM reviews r
                 JOIN users u ON r.user_id = u.id
@@ -187,6 +189,10 @@ def create_review(
                     detail="You have already reviewed this product"
                 )
             
+            # Determine initial status based on user role
+            # Reviewers get auto-published, regular users need approval
+            initial_status = "published" if current_user.get("role") == "reviewer" else "pending"
+            
             # Create review
             review_id = str(uuid.uuid4())
             cur.execute("""
@@ -197,7 +203,7 @@ def create_review(
                 RETURNING *
             """, (
                 review_id, str(current_user["id"]), str(review.product_id),
-                review.rating, review.title, review.content, "pending"
+                review.rating, review.title, review.content, initial_status
             ))
             
             new_review = cur.fetchone()
@@ -806,7 +812,8 @@ def list_review_comments(
                 SELECT 
                     c.*, 
                     u.name as user_name, 
-                    u.avatar as user_avatar
+                    u.avatar as user_avatar,
+                    u.role as user_role
                 FROM review_comments c
                 JOIN users u ON c.user_id = u.id
                 WHERE c.review_id = %s AND c.status = %s

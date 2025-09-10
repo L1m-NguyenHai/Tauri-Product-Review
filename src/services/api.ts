@@ -153,6 +153,13 @@ export const adminAPI = {
     return apiRequest(`/users/${userId}`, { method: 'DELETE' });
   },
 
+  updateUserRole: async (userId: string, role: 'user' | 'reviewer'): Promise<void> => {
+    return apiRequest(`/users/${userId}/role`, {
+      method: 'PUT',
+      body: JSON.stringify({ role })
+    });
+  },
+
   // Review Management
   getAllReviews: async (params?: { 
     limit?: number; 
