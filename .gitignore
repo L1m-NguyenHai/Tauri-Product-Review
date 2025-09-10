@@ -26,3 +26,10 @@ dist-ssr
 __pycache__/
 .pytest_cache/
 .env
+
+# Explicitly ignore __pycache__ in databaseAPI subfolders
+databaseAPI/__pycache__/
+databaseAPI/auth/__pycache__/
+databaseAPI/database/__pycache__/
+databaseAPI/models/__pycache__/
+databaseAPI/routes/__pycache__/
