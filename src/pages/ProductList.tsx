@@ -28,16 +28,26 @@ const calculateDiscount = (originalPrice: number, currentPrice: number): number 
   return Math.round(((originalPrice - currentPrice) / originalPrice) * 100);
 };
 
+interface ProductListProps {
+  searchQuery: string;
+  selectedCategory: string;
+  sortBy: string;
+  viewMode: 'grid' | 'list';
+  currentPage: number;
+  setCurrentPage: (page: number) => void;
+}
+
 const ProductList: React.FC<ProductListProps> = ({
   searchQuery,
   selectedCategory,
   sortBy,
-  viewMode
+  viewMode,
+  currentPage,
+  setCurrentPage
 }) => {
   const { isDark } = useTheme();
   const [products, setProducts] = useState<any[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
-  const [currentPage, setCurrentPage] = useState<number>(1);
   const [totalPages, setTotalPages] = useState<number>(1);
   const productsPerPage = 8; // Adjust this number as needed
 

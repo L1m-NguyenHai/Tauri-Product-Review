@@ -21,6 +21,12 @@ const ProductListWrapper = () => {
   const [searchQuery, setSearchQuery] = React.useState('');
   const [selectedCategory, setSelectedCategory] = React.useState('all');
   const [sortBy, setSortBy] = React.useState('rating');
+  const [currentPage, setCurrentPage] = React.useState(1);
+
+  // Reset page to 1 when sortBy or selectedCategory changes
+  React.useEffect(() => {
+    setCurrentPage(1);
+  }, [sortBy, selectedCategory]);
 
   const productFilters = {
     searchQuery,
@@ -30,7 +36,9 @@ const ProductListWrapper = () => {
     sortBy,
     setSortBy,
     viewMode,
-    setViewMode
+    setViewMode,
+    currentPage,
+    setCurrentPage
   };
 
   return (
@@ -40,6 +48,8 @@ const ProductListWrapper = () => {
         selectedCategory={selectedCategory}
         sortBy={sortBy}
         viewMode={viewMode}
+        currentPage={currentPage}
+        setCurrentPage={setCurrentPage}
       />
     </Layout>
   );
