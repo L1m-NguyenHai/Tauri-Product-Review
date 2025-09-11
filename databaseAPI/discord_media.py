@@ -77,12 +77,12 @@ class SimpleDiscordUploader:
                     except Exception as fetch_error:
                         raise Exception(f'Discord channel {DISCORD_CHANNEL_ID} not found or no access: {fetch_error}')
                 
-                logger.info(f"Found Discord channel: {channel.name}")
+                logger.info(f"Found Discord channel: {channel.name}") # type: ignore
                 
                 # Upload to Discord
                 with open(file_path, 'rb') as f:
                     discord_file = File(f, filename=os.path.basename(file_path))
-                    msg = await channel.send(file=discord_file)
+                    msg = await channel.send(file=discord_file) # type: ignore
                 
                 if msg.attachments:
                     url = msg.attachments[0].url

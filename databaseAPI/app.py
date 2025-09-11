@@ -21,9 +21,40 @@ from routes.review_requests import router as review_requests_router
 from routes.contact import router as contact_router
 from routes.admin import router as admin_router
 
+from contextlib import asynccontextmanager
+
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Lifespan context manager for startup and shutdown events"""
+    # Startup code
+    try:
+        init_pool()
+        logger.info("Database connection pool initialized successfully")
+        # Start Discord bot for media upload
+        start_discord_bot()
+        logger.info("Discord bot started successfully")
+    except Exception as e:
+        logger.error(f"Failed to initialize database or Discord bot: {e}")
+        raise
+    yield
+    # Shutdown code
+    try:
+        close_pool()
+        logger.info("Database connection pool closed successfully")
+        
+        # Cleanup Discord resources (if cleanup function exists)
+        try:
+            from discord_media import cleanup_discord # type: ignore
+            await cleanup_discord()
+            logger.info("Discord resources cleaned up successfully")
+        except (ImportError, AttributeError):
+            logger.info("No Discord cleanup needed")
+    except Exception as e:
+        logger.error(f"Error during shutdown: {e}")
 
 # Create FastAPI app with comprehensive metadata
 app = FastAPI(
@@ -60,6 +91,7 @@ app = FastAPI(
         "name": "MIT",
         "url": "https://opensource.org/licenses/MIT",
     },
+    lifespan=lifespan
 )
 
 # CORS Middleware - Configure for your frontend domains
@@ -140,44 +172,13 @@ async def general_exception_handler(request: Request, exc: Exception):
         }
     )
 
-# Database lifecycle events
-@app.on_event("startup")
-async def startup_event():
-    """Initialize database connection pool on startup"""
-    try:
-        init_pool()
-        logger.info("Database connection pool initialized successfully")
-        # Start Discord bot for media upload
-        start_discord_bot()
-        logger.info("Discord bot started successfully")
-    except Exception as e:
-        logger.error(f"Failed to initialize database or Discord bot: {e}")
-        raise
-
-@app.on_event("shutdown")
-async def shutdown_event():
-    """Close database connection pool on shutdown"""
-    try:
-        close_pool()
-        logger.info("Database connection pool closed successfully")
-        
-        # Cleanup Discord resources (if cleanup function exists)
-        try:
-            from discord_media import cleanup_discord
-            await cleanup_discord()
-            logger.info("Discord resources cleaned up successfully")
-        except (ImportError, AttributeError):
-            logger.info("No Discord cleanup needed")
-    except Exception as e:
-        logger.error(f"Error during shutdown: {e}")
-
 # Root endpoint
 @app.get("/", tags=["Root"])
 async def root():
     """Root endpoint with API information"""
     return {
         "message": "Product Review API",
-        "version": "1.0.0",
+        "version": "1.0.1",
         "status": "operational",
         "documentation": "/docs",
         "openapi_schema": "/openapi.json"
@@ -215,7 +216,7 @@ async def health_check():
 async def get_version():
     """Get API version information"""
     return {
-        "version": "1.0.0",
+        "version": "1.0.1",
         "build": "production",
         "features": [
             "authentication",
@@ -253,7 +254,7 @@ def custom_openapi():
     
     openapi_schema = get_openapi(
         title="Product Review API",
-        version="1.0.0",
+        version="1.0.1",
         description="A comprehensive API for managing product reviews and ratings",
         routes=app.routes,
     )
@@ -288,7 +289,7 @@ if __name__ == "__main__":
     # Development configuration
     uvicorn.run(
         "app:app",
-        host="0.0.0.0",
+        host="localhost",
         port=8000,
         reload=True,
         log_level="info",
