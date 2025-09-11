@@ -1,10 +1,12 @@
 import React, { useState, useEffect } from 'react';
-import { Users, MessageSquare, Package, TrendingUp, Eye, Edit, Trash2, CheckCircle, XCircle, Loader2, RefreshCw } from 'lucide-react';
+import { Users, MessageSquare, Package, TrendingUp, Eye, Edit, Trash2, CheckCircle, XCircle, Loader2, RefreshCw, Plus } from 'lucide-react';
 import ReviewerBadge from '../components/ReviewerBadge';
 import { useTheme } from '../contexts/ThemeContext';
 import { useAuth } from '../contexts/AuthContext';
-import { adminAPI, type User, type Review, type ReviewRequest, type DashboardStats } from '../services/api';
+import { adminAPI, type User, type Review, type ReviewRequest, type DashboardStats, type Product } from '../services/api';
 import { useNotification } from '../components/Notification';
+import AddProductModal from '../components/AddProductModal';
+import EditProductModal from '../components/EditProductModal';
 
 const AdminPanel: React.FC = () => {
   const { isDark } = useTheme();
@@ -19,19 +21,61 @@ const AdminPanel: React.FC = () => {
   const [users, setUsers] = useState<User[]>([]);
   const [reviews, setReviews] = useState<Review[]>([]);
   const [reviewRequests, setReviewRequests] = useState<ReviewRequest[]>([]);
+  const [products, setProducts] = useState<Product[]>([]);
+
+  // Modal states
+  const [showAddProductModal, setShowAddProductModal] = useState(false);
+  const [showEditProductModal, setShowEditProductModal] = useState(false);
+  const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
+  const [prefilledRequestData, setPrefilledRequestData] = useState<ReviewRequest | null>(null);
+
+  // Helper function to load all products
+  const loadAllProducts = async (): Promise<Product[]> => {
+    const allProducts: Product[] = [];
+    let offset = 0;
+    const limit = 100; // Maximum allowed by backend
+    
+    while (true) {
+      try {
+        const response = await adminAPI.getAllProducts({ limit, offset });
+        const products = response.products || [];
+        
+        if (products.length === 0) {
+          break; // No more products
+        }
+        
+        allProducts.push(...products);
+        
+        if (products.length < limit) {
+          break; // Last page
+        }
+        
+        offset += limit;
+      } catch (error) {
+        console.error('Failed to load products at offset', offset, ':', error);
+        break;
+      }
+    }
+    
+    return allProducts;
+  };
 
   // All function definitions before conditional return
   const loadDashboardData = async () => {
     setLoading(true);
     setError(null);
     try {
-      // Load data with individual error handling
+      // Load basic data with individual error handling
       const results = await Promise.allSettled([
         adminAPI.getDashboardStats(),
         adminAPI.getAllUsers({ limit: 10 }),
         adminAPI.getAllReviewsForAdmin({ limit: 10, sort_by: 'created_at', sort_order: 'desc' }),
-        adminAPI.getPendingReviewRequests()
+        adminAPI.getPendingReviewRequests(),
       ]);
+
+      // Load all products separately
+      const allProducts = await loadAllProducts();
+      setProducts(allProducts);
 
       // Handle dashboard stats
       if (results[0].status === 'fulfilled') {
@@ -66,9 +110,9 @@ const AdminPanel: React.FC = () => {
         showNotification('warning', 'Could not load review requests');
       }
 
-      // Check if all failed
-      const allFailed = results.every(result => result.status === 'rejected');
-      if (allFailed) {
+      // Check if all basic APIs failed (products loading is separate)
+      const allBasicApiFailed = results.every(result => result.status === 'rejected');
+      if (allBasicApiFailed && allProducts.length === 0) {
         throw new Error('All API calls failed - check authentication');
       }
 
@@ -155,6 +199,12 @@ const AdminPanel: React.FC = () => {
     }
   };
 
+  const handleApproveAndCreateProduct = (request: ReviewRequest) => {
+    // Pre-fill AddProductModal with review request data
+    setPrefilledRequestData(request);
+    setShowAddProductModal(true);
+  };
+
   const handleRejectRequest = async (requestId: string) => {
     const reason = prompt('Please provide a reason for rejection:');
     if (!reason) return;
@@ -171,6 +221,37 @@ const AdminPanel: React.FC = () => {
       console.error('Failed to reject request:', err);
       showNotification('error', 'Failed to reject request');
     }
+  };
+
+  const handleDeleteProduct = async (productId: string) => {
+    if (!confirm('Are you sure you want to delete this product?')) return;
+    
+    try {
+      await adminAPI.deleteProduct(productId);
+      setProducts(prev => prev.filter(product => product.id !== productId));
+      showNotification('success', 'Product deleted successfully');
+    } catch (err) {
+      console.error('Failed to delete product:', err);
+      showNotification('error', 'Failed to delete product');
+    }
+  };
+
+  const handleEditProduct = (product: Product) => {
+    setSelectedProduct(product);
+    setShowEditProductModal(true);
+  };
+
+  const handleProductCreated = (newProduct: Product) => {
+    setProducts(prev => [newProduct, ...prev]);
+    setShowAddProductModal(false);
+  };
+
+  const handleProductUpdated = (updatedProduct: Product) => {
+    setProducts(prev => prev.map(product => 
+      product.id === updatedProduct.id ? updatedProduct : product
+    ));
+    setShowEditProductModal(false);
+    setSelectedProduct(null);
   };
 
   // useEffect hook after all function definitions
@@ -322,6 +403,7 @@ const AdminPanel: React.FC = () => {
             <TabButton id="users" label="Users" count={users.length} />
             <TabButton id="reviews" label="Reviews" count={reviews.length} />
             <TabButton id="requests" label="Requests" count={reviewRequests.length} />
+            <TabButton id="products" label="Products" count={products.length} />
           </nav>
         </div>
 
@@ -663,6 +745,13 @@ const AdminPanel: React.FC = () => {
                               <CheckCircle className="w-4 h-4" />
                             </button>
                             <button 
+                              onClick={() => handleApproveAndCreateProduct(request)}
+                              className="px-2 py-1 text-xs bg-green-500 text-white rounded hover:bg-green-600"
+                              title="Approve & Create Product"
+                            >
+                              Create Product
+                            </button>
+                            <button 
                               onClick={() => handleRejectRequest(request.id)}
                               className="p-1 text-red-500 hover:text-red-600"
                               title="Reject Request"
@@ -686,8 +775,198 @@ const AdminPanel: React.FC = () => {
               )}
             </div>
           )}
+
+          {activeTab === 'products' && (
+            <div>
+              <div className="flex justify-between items-center mb-6">
+                <h3 className={`text-lg font-semibold ${
+                  isDark ? 'text-white' : 'text-gray-900'
+                }`}>
+                  Product Management ({products.length} products)
+                </h3>
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => setShowAddProductModal(true)}
+                    className="flex items-center space-x-2 px-4 py-2 text-sm bg-green-500 text-white rounded-lg hover:bg-green-600 transition-colors"
+                  >
+                    <Plus className="w-4 h-4" />
+                    <span>Add Product</span>
+                  </button>
+                  <button
+                    onClick={loadDashboardData}
+                    disabled={loading}
+                    className="flex items-center space-x-2 px-3 py-2 text-sm bg-blue-500 text-white rounded-lg hover:bg-blue-600 disabled:opacity-50 transition-colors"
+                  >
+                    <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+                    <span>Refresh</span>
+                  </button>
+                </div>
+              </div>
+              {products.length > 0 ? (
+                <div className="overflow-x-auto">
+                  <table className="w-full">
+                    <thead>
+                      <tr className={`border-b ${
+                        isDark ? 'border-gray-700' : 'border-gray-200'
+                      }`}>
+                        <th className={`text-left py-3 px-4 font-medium ${
+                          isDark ? 'text-gray-300' : 'text-gray-700'
+                        }`}>
+                          Product
+                        </th>
+                        <th className={`text-left py-3 px-4 font-medium ${
+                          isDark ? 'text-gray-300' : 'text-gray-700'
+                        }`}>
+                          Price
+                        </th>
+                        <th className={`text-left py-3 px-4 font-medium ${
+                          isDark ? 'text-gray-300' : 'text-gray-700'
+                        }`}>
+                          Status
+                        </th>
+                        <th className={`text-left py-3 px-4 font-medium ${
+                          isDark ? 'text-gray-300' : 'text-gray-700'
+                        }`}>
+                          Created
+                        </th>
+                        <th className={`text-left py-3 px-4 font-medium ${
+                          isDark ? 'text-gray-300' : 'text-gray-700'
+                        }`}>
+                          Actions
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {products.map((product) => (
+                        <tr key={product.id} className={`border-b ${
+                          isDark ? 'border-gray-700' : 'border-gray-200'
+                        }`}>
+                          <td className="py-3 px-4">
+                            <div className="flex items-center space-x-3">
+                              {product.image && (
+                                <img 
+                                  src={product.image} 
+                                  alt={product.name}
+                                  className="w-10 h-10 rounded-lg object-cover"
+                                />
+                              )}
+                              <div>
+                                <div className={`font-medium ${
+                                  isDark ? 'text-white' : 'text-gray-900'
+                                }`}>
+                                  {product.name}
+                                </div>
+                                <div className={`text-sm ${
+                                  isDark ? 'text-gray-400' : 'text-gray-500'
+                                }`}>
+                                  {product.manufacturer}
+                                </div>
+                              </div>
+                            </div>
+                          </td>
+                          <td className={`py-3 px-4 ${
+                            isDark ? 'text-gray-300' : 'text-gray-700'
+                          }`}>
+                            <div className="flex flex-col">
+                              <span className="font-medium">${product.price}</span>
+                              {product.original_price && (
+                                <span className="text-sm text-gray-500 line-through">
+                                  ${product.original_price}
+                                </span>
+                              )}
+                            </div>
+                          </td>
+                          <td className="py-3 px-4">
+                            <div className="flex flex-col space-y-1">
+                              <span className={`inline-block px-2 py-1 text-xs font-medium rounded-full ${
+                                product.status === 'active'
+                                  ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200'
+                                  : product.status === 'inactive'
+                                  ? 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200'
+                                  : 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200'
+                              }`}>
+                                {product.status}
+                              </span>
+                              <span className={`text-xs ${
+                                product.availability === 'Available'
+                                  ? 'text-green-500'
+                                  : product.availability === 'Out of Stock'
+                                  ? 'text-red-500'
+                                  : 'text-yellow-500'
+                              }`}>
+                                {product.availability.replace('_', ' ')}
+                              </span>
+                            </div>
+                          </td>
+                          <td className={`py-3 px-4 ${
+                            isDark ? 'text-gray-300' : 'text-gray-700'
+                          }`}>
+                            {new Date(product.created_at).toLocaleDateString()}
+                          </td>
+                          <td className="py-3 px-4">
+                            <div className="flex gap-2">
+                              <button className="p-1 text-blue-500 hover:text-blue-600">
+                                <Eye className="w-4 h-4" />
+                              </button>
+                              <button 
+                                onClick={() => handleEditProduct(product)}
+                                className="p-1 text-gray-500 hover:text-gray-600"
+                              >
+                                <Edit className="w-4 h-4" />
+                              </button>
+                              <button 
+                                onClick={() => handleDeleteProduct(product.id)}
+                                className="p-1 text-red-500 hover:text-red-600"
+                                title="Delete Product"
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              ) : (
+                <div className={`text-center py-8 ${
+                  isDark ? 'text-gray-400' : 'text-gray-500'
+                }`}>
+                  <Package className="w-12 h-12 mx-auto mb-4 opacity-50" />
+                  <p>No products found</p>
+                  <button
+                    onClick={() => setShowAddProductModal(true)}
+                    className="mt-4 px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors"
+                  >
+                    Add First Product
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
         </div>
       </div>
+
+      {/* Modals */}
+      <AddProductModal 
+        isOpen={showAddProductModal}
+        onClose={() => {
+          setShowAddProductModal(false);
+          setPrefilledRequestData(null);
+        }}
+        onProductCreated={handleProductCreated}
+        reviewRequest={prefilledRequestData || undefined}
+      />
+      
+      <EditProductModal 
+        isOpen={showEditProductModal}
+        onClose={() => {
+          setShowEditProductModal(false);
+          setSelectedProduct(null);
+        }}
+        onProductUpdated={handleProductUpdated}
+        product={selectedProduct}
+      />
     </div>
   );
 };

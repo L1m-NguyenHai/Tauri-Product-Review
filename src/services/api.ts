@@ -28,6 +28,42 @@ interface Product {
   review_count: number;
   created_at: string;
   updated_at: string;
+  features?: ProductFeature[];
+  images?: ProductImage[];
+  specifications?: ProductSpecification[];
+  store_links?: StoreLink[];
+}
+
+interface ProductFeature {
+  id: string;
+  product_id: string;
+  feature_text: string;
+  sort_order: number;
+}
+
+interface ProductImage {
+  id: string;
+  product_id: string;
+  image_url: string;
+  is_primary: boolean;
+  sort_order: number;
+  created_at: string;
+}
+
+interface ProductSpecification {
+  id: string;
+  product_id: string;
+  spec_name: string;
+  spec_value: string;
+}
+
+interface StoreLink {
+  id: string;
+  product_id: string;
+  store_name: string;
+  price: number;
+  url: string;
+  is_official: boolean;
 }
 
 interface Review {
@@ -77,10 +113,34 @@ interface DashboardStats {
   total_reviews?: number;
   total_categories?: number;
   pending_reviews?: number;
+  pending_review_requests?: number;
+  unread_messages?: number;
   recent_registrations?: number;
   average_rating?: number;
   top_categories?: any[];
   recent_activity?: any[];
+}
+
+interface Category {
+  id: string;
+  name: string;
+  slug: string;
+  description?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+interface ProductInput {
+  name: string;
+  description: string;
+  manufacturer: string;
+  price: number;
+  original_price?: number;
+  product_url: string;
+  availability: string;
+  status: string;
+  image?: string;
+  category_id: string;
 }
 
 // API Helper
@@ -327,37 +387,163 @@ export const adminAPI = {
     return apiRequest('/contact/stats/summary');
   },
 
-  // Analytics
-  getProductAnalytics: async (params?: { period?: string; category_id?: string }): Promise<any> => {
+
+
+  // Product Management
+  getAllProducts: async (params?: { 
+    limit?: number; 
+    offset?: number; 
+    category_id?: string;
+    manufacturer?: string;
+    min_price?: number;
+    max_price?: number;
+    min_rating?: number;
+    status?: string;
+    sort_by?: string;
+    sort_order?: string;
+    search?: string;
+  }): Promise<{ products: Product[]; total: number }> => {
     const query = new URLSearchParams();
-    if (params?.period) query.append('period', params.period);
+    if (params?.limit) query.append('limit', params.limit.toString());
+    if (params?.offset) query.append('offset', params.offset.toString());
     if (params?.category_id) query.append('category_id', params.category_id);
+    if (params?.manufacturer) query.append('manufacturer', params.manufacturer);
+    if (params?.min_price) query.append('min_price', params.min_price.toString());
+    if (params?.max_price) query.append('max_price', params.max_price.toString());
+    if (params?.min_rating) query.append('min_rating', params.min_rating.toString());
+    if (params?.status) query.append('status', params.status);
+    if (params?.sort_by) query.append('sort_by', params.sort_by);
+    if (params?.sort_order) query.append('sort_order', params.sort_order);
+    if (params?.search) query.append('search', params.search);
     
+    const response = await apiRequest(`/products/?${query}`);
+    return {
+      products: response.items || response.products || [],
+      total: response.total || 0
+    };
+  },
+
+  getProduct: async (productId: string): Promise<Product> => {
+    return apiRequest(`/products/${productId}`);
+  },
+
+  createProduct: async (productData: ProductInput): Promise<Product> => {
+    return apiRequest('/products/', {
+      method: 'POST',
+      body: JSON.stringify(productData)
+    });
+  },
+
+  updateProduct: async (productId: string, productData: Partial<ProductInput>): Promise<Product> => {
+    return apiRequest(`/products/${productId}`, {
+      method: 'PUT',
+      body: JSON.stringify(productData)
+    });
+  },
+
+  deleteProduct: async (productId: string): Promise<void> => {
+    return apiRequest(`/products/${productId}`, { method: 'DELETE' });
+  },
+
+  // Category Management
+  getAllCategories: async (): Promise<Category[]> => {
+    return apiRequest('/categories/');
+  },
+
+  getCategory: async (categoryId: string): Promise<Category> => {
+    return apiRequest(`/categories/${categoryId}`);
+  },
+
+  createCategory: async (categoryData: { name: string; slug: string; description?: string }): Promise<Category> => {
+    return apiRequest('/categories/', {
+      method: 'POST',
+      body: JSON.stringify(categoryData)
+    });
+  },
+
+  updateCategory: async (categoryId: string, categoryData: Partial<{ name: string; slug: string; description?: string }>): Promise<Category> => {
+    return apiRequest(`/categories/${categoryId}`, {
+      method: 'PUT',
+      body: JSON.stringify(categoryData)
+    });
+  },
+
+  deleteCategory: async (categoryId: string): Promise<void> => {
+    return apiRequest(`/categories/${categoryId}`, { method: 'DELETE' });
+  },
+
+  // Product Features
+  addProductFeature: async (productId: string, featureData: { feature_text: string; sort_order?: number }): Promise<ProductFeature> => {
+    return apiRequest(`/products/${productId}/features`, {
+      method: 'POST',
+      body: JSON.stringify(featureData)
+    });
+  },
+
+  deleteProductFeature: async (featureId: string): Promise<void> => {
+    return apiRequest(`/products/features/${featureId}`, { method: 'DELETE' });
+  },
+
+  // Product Images
+  addProductImage: async (productId: string, imageData: { image_url: string; is_primary?: boolean; sort_order?: number }): Promise<ProductImage> => {
+    return apiRequest(`/products/${productId}/images`, {
+      method: 'POST',
+      body: JSON.stringify(imageData)
+    });
+  },
+
+  deleteProductImage: async (imageId: string): Promise<void> => {
+    return apiRequest(`/products/images/${imageId}`, { method: 'DELETE' });
+  },
+
+  // Product Specifications
+  addProductSpecification: async (productId: string, specData: { spec_name: string; spec_value: string }): Promise<ProductSpecification> => {
+    return apiRequest(`/products/${productId}/specifications`, {
+      method: 'POST',
+      body: JSON.stringify(specData)
+    });
+  },
+
+  deleteProductSpecification: async (specId: string): Promise<void> => {
+    return apiRequest(`/products/specifications/${specId}`, { method: 'DELETE' });
+  },
+
+  // Store Links
+  addStoreLink: async (productId: string, linkData: { store_name: string; price: number; url: string; is_official?: boolean }): Promise<StoreLink> => {
+    return apiRequest(`/products/${productId}/store-links`, {
+      method: 'POST',
+      body: JSON.stringify(linkData)
+    });
+  },
+
+  deleteStoreLink: async (linkId: string): Promise<void> => {
+    return apiRequest(`/products/store-links/${linkId}`, { method: 'DELETE' });
+  },
+
+  // Analytics endpoints
+  getProductAnalytics: async (days?: number): Promise<any> => {
+    const query = new URLSearchParams();
+    if (days) query.append('days', days.toString());
     return apiRequest(`/admin/analytics/products?${query}`);
   },
 
-  getReviewAnalytics: async (params?: { period?: string }): Promise<any> => {
+  getReviewAnalytics: async (days?: number): Promise<any> => {
     const query = new URLSearchParams();
-    if (params?.period) query.append('period', params.period);
-    
+    if (days) query.append('days', days.toString());
     return apiRequest(`/admin/analytics/reviews?${query}`);
   },
 
-  getUserAnalytics: async (params?: { period?: string }): Promise<any> => {
+  getUserAnalytics: async (days?: number): Promise<any> => {
     const query = new URLSearchParams();
-    if (params?.period) query.append('period', params.period);
-    
+    if (days) query.append('days', days.toString());
     return apiRequest(`/admin/analytics/users?${query}`);
   },
 
-  getEngagementAnalytics: async (params?: { period?: string }): Promise<any> => {
-    const query = new URLSearchParams();
-    if (params?.period) query.append('period', params.period);
-    
-    return apiRequest(`/admin/analytics/engagement?${query}`);
+  getEngagementAnalytics: async (): Promise<any> => {
+    return apiRequest('/admin/analytics/engagement');
   },
 
-  // System Health
+  // System maintenance
   getSystemHealth: async (): Promise<any> => {
     return apiRequest('/admin/system/health');
   },
@@ -366,11 +552,9 @@ export const adminAPI = {
     return apiRequest('/admin/maintenance/cleanup-orphaned', { method: 'POST' });
   },
 
-  getRecentLogs: async (params?: { limit?: number; level?: string }): Promise<any> => {
+  getRecentActivity: async (limit?: number): Promise<any[]> => {
     const query = new URLSearchParams();
-    if (params?.limit) query.append('limit', params.limit.toString());
-    if (params?.level) query.append('level', params.level);
-    
+    if (limit) query.append('limit', limit.toString());
     return apiRequest(`/admin/logs/recent?${query}`);
   }
 };
@@ -382,5 +566,11 @@ export type {
   Review, 
   ReviewRequest, 
   ContactMessage, 
-  DashboardStats 
+  DashboardStats,
+  Category,
+  ProductInput,
+  ProductFeature,
+  ProductImage,
+  ProductSpecification,
+  StoreLink
 };

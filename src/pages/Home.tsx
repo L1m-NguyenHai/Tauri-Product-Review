@@ -1,46 +1,131 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { Star, TrendingUp, Users, Award } from 'lucide-react';
 import { useTheme } from '../contexts/ThemeContext';
+import ProductCard from '../components/ProductCard';
+import axios from 'axios';
 
 const Home: React.FC = () => {
   const { isDark } = useTheme();
+  
+  // State for API data
+  const [latestProducts, setLatestProducts] = useState<any[]>([]);
+  const [highestRatedProduct, setHighestRatedProduct] = useState<any>(null);
+  const [categories, setCategories] = useState<any[]>([]);
+  const [stats, setStats] = useState({
+    totalReviews: '0',
+    productsReviewed: '0',
+    activeUsers: '0',
+    expertReviewers: '0'
+  });
+  const [loading, setLoading] = useState(true);
 
-  const featuredProducts = [
-    {
-      id: '1',
-      name: 'iPhone 15 Pro',
-      category: 'Smartphones',
-      rating: 4.8,
-      reviews: 1234,
-      image: 'https://images.pexels.com/photos/788946/pexels-photo-788946.jpeg?auto=compress&cs=tinysrgb&w=300&h=200&dpr=2',
-      price: '$999'
-    },
-    {
-      id: '2',
-      name: 'MacBook Pro M3',
-      category: 'Laptops',
-      rating: 4.9,
-      reviews: 856,
-      image: 'https://images.pexels.com/photos/205421/pexels-photo-205421.jpeg?auto=compress&cs=tinysrgb&w=300&h=200&dpr=2',
-      price: '$1,999'
-    },
-    {
-      id: '3',
-      name: 'Sony WH-1000XM5',
-      category: 'Audio',
-      rating: 4.7,
-      reviews: 542,
-      image: 'https://images.pexels.com/photos/3394650/pexels-photo-3394650.jpeg?auto=compress&cs=tinysrgb&w=300&h=200&dpr=2',
-      price: '$399'
+  // Utility function to format price
+  const formatPrice = (price: number | string): string => {
+    if (typeof price === 'string') {
+      price = parseFloat(price);
     }
-  ];
+    
+    // Remove decimal part and format with thousand separators
+    return Math.floor(price)
+      .toString()
+      .replace(/\B(?=(\d{3})+(?!\d))/g, '.') + 'đ';
+  };
 
-  const stats = [
-    { icon: Star, label: 'Total Reviews', value: '15,234' },
-    { icon: TrendingUp, label: 'Products Reviewed', value: '2,890' },
-    { icon: Users, label: 'Active Users', value: '45,678' },
-    { icon: Award, label: 'Expert Reviewers', value: '234' }
+  // Fetch data from APIs
+  useEffect(() => {
+    const fetchData = async () => {
+      try {
+        setLoading(true);
+        
+        // Fetch latest products (products with few or no reviews)
+        const latestResponse = await axios.get('http://localhost:8000/api/v1/products/', {
+          params: {
+            limit: 3,
+            sort_by: 'created_at',
+            sort_order: 'desc'
+          }
+        });
+        
+        // Fetch highest rated product for hero section
+        const highestRatedResponse = await axios.get('http://localhost:8000/api/v1/products/', {
+          params: {
+            limit: 1,
+            sort_by: 'average_rating',
+            sort_order: 'desc'
+          }
+        });
+        
+        // Fetch categories
+        const categoriesResponse = await axios.get('http://localhost:8000/api/v1/categories/');
+        
+        // Debug: Log API responses
+        console.log('Latest products response:', latestResponse.data);
+        console.log('Highest rated response:', highestRatedResponse.data);
+        console.log('Categories response:', categoriesResponse.data);
+        
+        // Set the data
+        setLatestProducts(latestResponse.data.items || []);
+        setHighestRatedProduct(highestRatedResponse.data.items?.[0] || null);
+        setCategories(categoriesResponse.data.slice(0, 5) || []); // Limit to 5 categories
+        
+        // For stats, we'll use static data for now but you can create endpoints for these
+        setStats({
+          totalReviews: '15,234',
+          productsReviewed: latestResponse.data.total?.toString() || '0',
+          activeUsers: '45,678',
+          expertReviewers: '234'
+        });
+        
+      } catch (error) {
+        console.error('Error fetching data:', error);
+        // Fallback to empty arrays/objects on error
+        setLatestProducts([]);
+        setHighestRatedProduct(null);
+        setCategories([]);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchData();
+  }, []);
+
+  // Category icon mapping
+  const getCategoryIcon = (categoryName: string) => {
+    const iconMap: { [key: string]: string } = {
+      'keyboard': '⌨️',
+      'mouse': '🖱️',
+      'monitor': '🖥️',
+      'headphone': '🎧',
+      'mobile': '📱',
+      'laptop': '💻',
+      'audio': '🎧',
+      'gaming': '🎮',
+      'accessories': '⚙️',
+      'storage': '💾'
+    };
+    
+    const key = categoryName.toLowerCase();
+    return iconMap[key] || '📦';
+  };
+
+  const getCategoryColor = (index: number) => {
+    const colors = [
+      'bg-blue-100 text-blue-600',
+      'bg-green-100 text-green-600',
+      'bg-purple-100 text-purple-600',
+      'bg-red-100 text-red-600',
+      'bg-yellow-100 text-yellow-600'
+    ];
+    return colors[index % colors.length];
+  };
+
+  const statsIcons = [
+    { icon: Star, label: 'Total Reviews', value: stats.totalReviews },
+    { icon: TrendingUp, label: 'Products Reviewed', value: stats.productsReviewed },
+    { icon: Users, label: 'Active Users', value: stats.activeUsers },
+    { icon: Award, label: 'Expert Reviewers', value: stats.expertReviewers }
   ];
 
   return (
@@ -51,26 +136,34 @@ const Home: React.FC = () => {
           <div className="flex-1 space-y-6">
             <div className="space-y-2">
               <h1 className="text-4xl lg:text-5xl font-bold text-white leading-tight">
-                Review of the<br />
-                Week
+                Highest Rated<br />
+                Product
               </h1>
               <p className="text-orange-100 text-lg">
-                Discover the latest tech through expert reviews
+                {highestRatedProduct ? 
+                  `${highestRatedProduct.name} - ${formatPrice(highestRatedProduct.price)}` :
+                  'Discover top-rated products loved by our community'
+                }
               </p>
             </div>
-            <button className="bg-white text-orange-500 hover:bg-orange-50 px-8 py-4 rounded-xl font-semibold text-lg transition-all transform hover:scale-105 shadow-lg">
-              Read Now
-            </button>
+            {highestRatedProduct && (
+              <Link 
+                to={`/products/${highestRatedProduct.id}`}
+                className="inline-block bg-white text-orange-500 hover:bg-orange-50 px-8 py-4 rounded-xl font-semibold text-lg transition-all transform hover:scale-105 shadow-lg"
+              >
+                View Product
+              </Link>
+            )}
           </div>
           <div className="hidden lg:block">
             <div className="relative">
               <img
-                src="https://images.pexels.com/photos/788946/pexels-photo-788946.jpeg?auto=compress&cs=tinysrgb&w=300&h=300&dpr=2"
+                src={highestRatedProduct?.image || "https://images.pexels.com/photos/788946/pexels-photo-788946.jpeg?auto=compress&cs=tinysrgb&w=300&h=300&dpr=2"}
                 alt="Featured Product"
                 className="w-64 h-64 object-cover rounded-2xl shadow-2xl transform rotate-3 hover:rotate-0 transition-transform duration-300"
               />
               <div className="absolute -top-4 -right-4 bg-white text-orange-500 px-4 py-2 rounded-full font-bold shadow-lg">
-                4.9★
+                {highestRatedProduct ? `${parseFloat(highestRatedProduct.average_rating).toFixed(1)}★` : '4.9★'}
               </div>
             </div>
           </div>
@@ -79,25 +172,29 @@ const Home: React.FC = () => {
 
       {/* Category Icons */}
       <section className="grid grid-cols-5 gap-6">
-        {[
-          { icon: '📱', label: 'Phones', color: 'bg-blue-100 text-blue-600' },
-          { icon: '💻', label: 'Laptops', color: 'bg-green-100 text-green-600' },
-          { icon: '🎧', label: 'Audio', color: 'bg-purple-100 text-purple-600' },
-          { icon: '⌚', label: 'Wearables', color: 'bg-red-100 text-red-600' },
-          { icon: '🎮', label: 'Gaming', color: 'bg-yellow-100 text-yellow-600' }
-        ].map((category, index) => (
-          <div key={index} className="text-center group cursor-pointer">
-            <div className={`w-16 h-16 mx-auto rounded-2xl ${category.color} flex items-center justify-center text-2xl mb-3 group-hover:scale-110 transition-transform`}>
-              {category.icon}
+        {loading ? (
+          // Loading skeleton for categories
+          [...Array(5)].map((_, index) => (
+            <div key={index} className="text-center">
+              <div className="w-16 h-16 mx-auto rounded-2xl bg-gray-200 animate-pulse mb-3"></div>
+              <div className="h-4 bg-gray-200 rounded animate-pulse"></div>
             </div>
-            <span className={`text-sm font-medium ${isDark ? 'text-gray-300' : 'text-gray-700'}`}>
-              {category.label}
-            </span>
-          </div>
-        ))}
+          ))
+        ) : (
+          categories.map((category: any, index: number) => (
+            <Link key={category.id} to={`/products?category=${category.id}`} className="text-center group cursor-pointer">
+              <div className={`w-16 h-16 mx-auto rounded-2xl ${getCategoryColor(index)} flex items-center justify-center text-2xl mb-3 group-hover:scale-110 transition-transform`}>
+                {getCategoryIcon(category.name)}
+              </div>
+              <span className={`text-sm font-medium ${isDark ? 'text-gray-300' : 'text-gray-700'}`}>
+                {category.name}
+              </span>
+            </Link>
+          ))
+        )}
       </section>
 
-      {/* Trending Products */}
+      {/* Latest Products Needing Reviews */}
       <section className={`rounded-2xl p-8 ${
         isDark ? 'bg-gray-800' : 'bg-white'
       }`}>
@@ -105,7 +202,7 @@ const Home: React.FC = () => {
           <h2 className={`text-2xl font-bold ${
             isDark ? 'text-white' : 'text-gray-900'
           }`}>
-            Trending Products
+            Latest Products Needing Reviews
           </h2>
           <Link
             to="/products"
@@ -116,79 +213,64 @@ const Home: React.FC = () => {
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-          {featuredProducts.map((product) => (
-            <Link
-              key={product.id}
-              to={`/products/${product.id}`}
-              className={`block rounded-2xl overflow-hidden transition-all hover:shadow-xl hover:-translate-y-1 ${
-                isDark ? 'bg-gray-700' : 'bg-white'
-              }`}
-            >
-              <img
-                src={product.image}
-                alt={product.name}
-                className="w-full h-40 object-cover"
-              />
-              <div className="p-5">
-                <h3 className={`font-semibold mb-2 text-sm ${
-                  isDark ? 'text-white' : 'text-gray-900'
-                }`}>
-                  {product.name}
-                </h3>
-                <div className="flex items-center gap-2">
-                  <div className="flex items-center gap-1">
-                    {[...Array(5)].map((_, i) => (
-                      <div
-                        key={i}
-                        className={`w-2 h-2 rounded-full ${
-                          i < Math.floor(product.rating) ? 'bg-yellow-400' : 'bg-gray-300'
-                        }`}
-                      />
-                    ))}
-                    <span className={`text-xs font-medium ml-1 ${
-                      isDark ? 'text-gray-300' : 'text-gray-700'
-                    }`}>
-                      {product.rating}
-                    </span>
+          {loading ? (
+            // Loading skeleton for products
+            [...Array(3)].map((_, index) => (
+              <div key={index} className={`rounded-2xl overflow-hidden ${isDark ? 'bg-gray-700' : 'bg-white'}`}>
+                <div className="w-full h-40 bg-gray-200 animate-pulse"></div>
+                <div className="p-5 space-y-3">
+                  <div className="h-4 bg-gray-200 rounded animate-pulse"></div>
+                  <div className="h-3 bg-gray-200 rounded animate-pulse w-3/4"></div>
+                  <div className="flex justify-between">
+                    <div className="h-4 bg-gray-200 rounded animate-pulse w-1/3"></div>
+                    <div className="h-3 bg-gray-200 rounded animate-pulse w-1/4"></div>
                   </div>
                 </div>
-                <div className="mt-3 flex items-center justify-between">
-                  <span className={`text-lg font-bold ${
-                    isDark ? 'text-white' : 'text-gray-900'
-                  }`}>
-                    {product.price}
-                  </span>
-                  <span className={`text-xs ${
-                    isDark ? 'text-gray-400' : 'text-gray-500'
-                  }`}>
-                    {product.reviews} reviews
-                  </span>
-                </div>
               </div>
-            </Link>
-          ))}
+            ))
+          ) : (
+            latestProducts.map((product: any) => (
+              <ProductCard 
+                key={product.id} 
+                product={product} 
+                showCategory={false}
+                imageClassName="w-full h-40 object-cover"
+                cardClassName="rounded-2xl"
+              />
+            ))
+          )}
         </div>
       </section>
 
       {/* Stats Section */}
       <section className="grid grid-cols-2 lg:grid-cols-4 gap-6">
-        {stats.map((stat, index) => (
+        {statsIcons.map((stat, index) => (
           <div key={index} className={`rounded-2xl p-6 text-center ${
             isDark ? 'bg-gray-800' : 'bg-white'
           }`}>
-            <div className="p-3 bg-orange-100 rounded-2xl inline-block mb-4">
-              <stat.icon className="w-6 h-6 text-orange-500" />
-            </div>
-            <p className={`text-2xl font-bold mb-1 ${
-              isDark ? 'text-white' : 'text-gray-900'
-            }`}>
-              {stat.value}
-            </p>
-            <p className={`text-sm ${
-              isDark ? 'text-gray-400' : 'text-gray-600'
-            }`}>
-              {stat.label}
-            </p>
+            {loading ? (
+              <>
+                <div className="p-3 bg-gray-200 rounded-2xl inline-block mb-4 w-12 h-12 animate-pulse"></div>
+                <div className="h-6 bg-gray-200 rounded animate-pulse mb-1"></div>
+                <div className="h-4 bg-gray-200 rounded animate-pulse"></div>
+              </>
+            ) : (
+              <>
+                <div className="p-3 bg-orange-100 rounded-2xl inline-block mb-4">
+                  <stat.icon className="w-6 h-6 text-orange-500" />
+                </div>
+                <p className={`text-2xl font-bold mb-1 ${
+                  isDark ? 'text-white' : 'text-gray-900'
+                }`}>
+                  {stat.value}
+                </p>
+                <p className={`text-sm ${
+                  isDark ? 'text-gray-400' : 'text-gray-600'
+                }`}>
+                  {stat.label}
+                </p>
+              </>
+            )}
           </div>
         ))}
       </section>

@@ -2,15 +2,9 @@ import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import axios from 'axios';
 import { useTheme } from '../contexts/ThemeContext';
+import ProductCard from '../components/ProductCard';
 
-interface ProductListProps {
-  searchQuery: string;
-  selectedCategory: string;
-  sortBy: string;
-  viewMode: 'grid' | 'list';
-}
-
-// Utility function to format price
+// Utility functions for ProductListItem
 const formatPrice = (price: number | string): string => {
   if (typeof price === 'string') {
     price = parseFloat(price);
@@ -22,7 +16,6 @@ const formatPrice = (price: number | string): string => {
     .replace(/\B(?=(\d{3})+(?!\d))/g, '.') + 'đ';
 };
 
-// Calculate discount percentage
 const calculateDiscount = (originalPrice: number, currentPrice: number): number => {
   if (!originalPrice || originalPrice <= currentPrice) return 0;
   return Math.round(((originalPrice - currentPrice) / originalPrice) * 100);
@@ -80,85 +73,6 @@ const ProductList: React.FC<ProductListProps> = ({
       fetchProducts();
     }, [searchQuery, selectedCategory, sortBy, currentPage]);
 
-  const ProductCard = ({ product }: { product: any }) => (
-    <Link
-      to={`/products/${product.id}`}
-      className={`block rounded-lg overflow-hidden transition-all hover:shadow-lg hover:-translate-y-1 ${
-        isDark ? 'bg-gray-800' : 'bg-white'
-      }`}
-    >
-      <div className="relative">
-        <img
-          src={product.image}
-          alt={product.name}
-          className="w-full h-48 object-contain p-2"
-        />
-        {/* Stock indicator, similar to reference image */}
-        <div className="absolute top-2 right-2">
-          <span className="text-xs bg-green-100 text-green-800 px-2 py-1 rounded">
-            Còn hàng
-          </span>
-        </div>
-      </div>
-      
-      <div className="p-3">
-        {/* Category name */}
-        <div className="text-xs text-gray-500 mb-1">
-          {product.category_name}
-        </div>
-        {/* Product name */}
-        <h3 className={`font-semibold text-xs ${
-          isDark ? 'text-white' : 'text-gray-900'
-        } truncate mb-2`}>
-          {product.name}
-        </h3>
-        {/* Price section */}
-        <div className="flex items-start gap-2 mb-2">
-          <span className={`text-sm font-bold ${
-            isDark ? 'text-green-400' : 'text-green-600'
-          }`}>
-            {formatPrice(product.price)}
-          </span>
-          {product.original_price && product.original_price > product.price && (
-            <>
-              <span className={`text-xs line-through ${
-                isDark ? 'text-gray-400' : 'text-gray-500'
-              }`}>
-                {formatPrice(product.original_price)}
-              </span>
-              <span className="text-xs text-red-500">
-                (-{calculateDiscount(product.original_price, product.price)}%)
-              </span>
-            </>
-          )}
-        </div>
-        {/* Rating and review count */}
-        <div className="flex items-center gap-2 mt-2">
-          <div className="flex items-center gap-1">
-            {[...Array(5)].map((_, i) => (
-              <div
-                key={i}
-                className={`w-2 h-2 rounded-full ${
-                  i < Math.floor(Number(product.average_rating)) ? 'bg-yellow-400' : 'bg-gray-300'
-                }`}
-              />
-            ))}
-            <span className={`text-xs font-medium ml-1 ${
-              isDark ? 'text-gray-300' : 'text-gray-700'
-            }`}>
-              {Number(product.average_rating).toFixed(2)}
-            </span>
-          </div>
-          <span className={`text-xs ${
-            isDark ? 'text-gray-400' : 'text-gray-500'
-          }`}>
-            ({product.review_count} đánh giá)
-          </span>
-        </div>
-      </div>
-    </Link>
-  );
-
   const ProductListItem = ({ product }: { product: any }) => (
     <Link
       to={`/products/${product.id}`}
@@ -173,11 +87,23 @@ const ProductList: React.FC<ProductListProps> = ({
             alt={product.name}
             className="w-24 h-24 object-contain rounded-lg"
           />
-          {/* Stock indicator */}
+          {/* Availability indicator */}
           <div className="absolute top-0 right-0">
-            <span className="text-xs bg-green-100 text-green-800 px-2 py-0.5 rounded">
-              Còn hàng
-            </span>
+            {product.availability === 'Available' && (
+              <span className="bg-green-500 text-white text-xs px-2 py-1 rounded-full">
+                Available
+              </span>
+            )}
+            {product.availability === 'Out of Stock' && (
+              <span className="bg-red-500 text-white text-xs px-2 py-1 rounded-full">
+                Out of Stock
+              </span>
+            )}
+            {product.availability === 'Pre-order' && (
+              <span className="bg-yellow-500 text-white text-xs px-2 py-1 rounded-full">
+                Pre-order
+              </span>
+            )}
           </div>
         </div>
         

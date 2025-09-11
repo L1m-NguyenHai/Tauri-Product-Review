@@ -25,9 +25,9 @@ const UserProfile: React.FC = () => {
   // Handle avatar upload
   const handleAvatarUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     if (!event.target.files || event.target.files.length === 0) return;
-    const file = event.target.files[0];
-    const formData = new FormData();
-    formData.append('avatar', file);
+  const file = event.target.files[0];
+  const formData = new FormData();
+  formData.append('file', file);
     setUploadingAvatar(true);
     try {
       const tokenType = localStorage.getItem('token_type');

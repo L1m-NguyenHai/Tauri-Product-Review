@@ -1,18 +1,19 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useParams, Link } from 'react-router-dom';
-import { Star, Heart, Share2, Reply, ChevronDown, ChevronUp, ZoomIn, X, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Star, Heart, Share2, Reply, ChevronDown, ChevronUp, ZoomIn, X, ChevronLeft, ChevronRight, Edit2, ExternalLink } from 'lucide-react';
 import { useTheme } from '../contexts/ThemeContext';
 import { useAuth } from '../contexts/AuthContext';
 import LazyImage from '../components/LazyImage';
 import ConfirmDialog from '../components/ConfirmDialog';
 import ReviewModal from '../components/ReviewModal/ReviewModal';
 import ReviewerBadge from '../components/ReviewerBadge';
+import EditProductModal from '../components/EditProductModal';
 
 const ProductDetail: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const { isDark } = useTheme();
-  const { user } = useAuth();
-  const [product, setProduct] = useState<any | null>(null);
+  const { user, isAdmin } = useAuth();
+    const [product, setProduct] = useState<any | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
   const [activeImage, setActiveImage] = useState(0);
   const [isFullscreen, setIsFullscreen] = useState(false);
@@ -23,6 +24,7 @@ const ProductDetail: React.FC = () => {
   const [mediaPreview, setMediaPreview] = useState<{url: string, type: string} | null>(null);
   const [isDeleting, setIsDeleting] = useState<{[key: string]: boolean}>({});
   const [isReviewModalOpen, setIsReviewModalOpen] = useState(false);
+    const [isEditProductModalOpen, setIsEditProductModalOpen] = useState(false);
   const [confirmDialog, setConfirmDialog] = useState<{
     isOpen: boolean;
     type: 'review' | 'comment';
@@ -38,6 +40,11 @@ const ProductDetail: React.FC = () => {
   });
   const thumbnailsContainerRef = useRef<HTMLDivElement>(null);
   const activeThumbRef = useRef<HTMLButtonElement>(null);
+
+    const handleProductUpdated = (updatedProduct: any) => {
+      setProduct(updatedProduct);
+      setIsEditProductModalOpen(false);
+    };
 
   useEffect(() => {
     const fetchProductDetails = async () => {
@@ -874,15 +881,31 @@ const ProductDetail: React.FC = () => {
                 )}
               </div>
               <div className={`mt-1 text-xs ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>
-                {product.availability === 'in_stock' ? 
-                  <span className="text-green-500">● Còn hàng</span> : 
-                  <span className="text-red-500">● Hết hàng</span>
-                }
+                {product.availability === 'Available' && (
+                  <span className="text-green-500">● Available</span>
+                )}
+                {product.availability === 'Out of Stock' && (
+                  <span className="text-red-500">● Out of Stock</span>
+                )}
+                {product.availability === 'Pre-order' && (
+                  <span className="text-blue-500">● Pre-order</span>
+                )}
               </div>
             </div>
             
             {/* Action Buttons */}
             <div className="flex gap-2 mt-4">
+                {/* Admin Edit Button */}
+                {isAdmin && (
+                  <button
+                    onClick={() => setIsEditProductModalOpen(true)}
+                    className="flex items-center gap-2 px-3 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded-lg font-medium transition-colors text-sm"
+                    title="Edit Product"
+                  >
+                    <Edit2 className="w-4 h-4" />
+                    Edit
+                  </button>
+                )}
               {user ? (
                 <button
                   onClick={() => setIsReviewModalOpen(true)}
@@ -1056,6 +1079,52 @@ const ProductDetail: React.FC = () => {
           </p>
         </div>
       </div>
+
+      {/* Store Links Section */}
+      {product.store_links && product.store_links.length > 0 && (
+        <div className={`mt-6 rounded-lg ${isDark ? 'bg-gray-800' : 'bg-white'} shadow-sm p-6`}>
+          <h2 className={`text-lg font-bold mb-4 ${isDark ? 'text-white' : 'text-gray-900'}`}>
+            Mua sản phẩm tại
+          </h2>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {product.store_links.map((link: any) => (
+              <a
+                key={link.id}
+                href={link.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className={`block p-4 rounded-lg border transition-all hover:shadow-md ${
+                  isDark 
+                    ? 'border-gray-600 hover:border-blue-500 bg-gray-700' 
+                    : 'border-gray-200 hover:border-blue-500 bg-gray-50'
+                } ${link.is_official ? 'ring-2 ring-blue-500 ring-opacity-20' : ''}`}
+              >
+                <div className="flex justify-between items-start mb-2">
+                  <h3 className={`font-semibold text-sm ${isDark ? 'text-white' : 'text-gray-900'}`}>
+                    {link.store_name}
+                  </h3>
+                  <div className="flex items-center gap-2">
+                    {link.is_official && (
+                      <span className="text-xs bg-blue-100 text-blue-800 px-2 py-1 rounded">
+                        Official
+                      </span>
+                    )}
+                    <ExternalLink className="w-4 h-4 text-gray-400" />
+                  </div>
+                </div>
+                {link.price && (
+                  <div className={`text-lg font-bold mb-2 ${isDark ? 'text-green-400' : 'text-green-600'}`}>
+                    {formatPrice(link.price)}
+                  </div>
+                )}
+                <div className={`text-xs ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>
+                  Click để xem tại {link.store_name}
+                </div>
+              </a>
+            ))}
+          </div>
+        </div>
+      )}
 
 
       {/* Reviews Section - Cleaner design */}
@@ -1487,6 +1556,16 @@ const ProductDetail: React.FC = () => {
           onSubmit={handleReviewSubmit}
         />
       )}
+
+        {/* Edit Product Modal */}
+        {product && isAdmin && (
+          <EditProductModal
+            isOpen={isEditProductModalOpen}
+            onClose={() => setIsEditProductModalOpen(false)}
+            onProductUpdated={handleProductUpdated}
+            product={product}
+          />
+        )}
 
       {/* Confirmation Dialog */}
       <ConfirmDialog
