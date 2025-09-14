@@ -7,8 +7,23 @@ interface User {
   name: string;
   avatar?: string;
   role: 'user' | 'admin' | 'reviewer';
+  email_verified?: boolean;
   created_at: string;
   updated_at: string;
+}
+
+export interface EmailVerificationRequest {
+  email: string;
+}
+
+export interface EmailVerificationConfirm {
+  token: string;
+}
+
+export interface EmailVerificationResponse {
+  message: string;
+  email: string;
+  verified?: boolean;
 }
 
 interface Product {
@@ -557,6 +572,288 @@ export const adminAPI = {
     if (limit) query.append('limit', limit.toString());
     return apiRequest(`/admin/logs/recent?${query}`);
   }
+};
+
+// User API Functions
+export const userAPI = {
+  // User Profile
+  getUserProfile: async (): Promise<User> => {
+    return apiRequest('/auth/me');
+  },
+
+  updateUserProfile: async (profileData: { name: string }): Promise<User> => {
+    return apiRequest('/users/profile', {
+      method: 'PUT',
+      body: JSON.stringify(profileData)
+    });
+  },
+
+  updateUserAvatar: async (formData: FormData): Promise<void> => {
+    const token = getAuthToken();
+    const url = `${API_BASE_URL}/users/profile/avatar`;
+    
+    const config: RequestInit = {
+      method: 'POST',
+      headers: {
+        ...(token && { Authorization: token }),
+      },
+      body: formData,
+    };
+
+    const response = await fetch(url, config);
+    
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      throw new Error(errorData.detail || `HTTP error! status: ${response.status}`);
+    }
+    
+    return response.json();
+  },
+
+  getUserStats: async (): Promise<{
+    total_reviews: number;
+    helpful_votes: number;
+    followers: number;
+    avg_rating: number;
+  }> => {
+    return apiRequest('/users/profile/stats');
+  },
+
+  getUserReviews: async (userId: string): Promise<{ items: Review[] }> => {
+    return apiRequest(`/users/${userId}/reviews`);
+  },
+
+  getUserById: async (userId: string): Promise<User> => {
+    return apiRequest(`/users/${userId}`);
+  },
+};
+
+// Auth API Functions
+export const authAPI = {
+  login: async (email: string, password: string): Promise<{
+    access_token: string;
+    token_type: string;
+  }> => {
+    return apiRequest('/auth/login', {
+      method: 'POST',
+      body: JSON.stringify({ email, password })
+    });
+  },
+
+  register: async (userData: {
+    name: string;
+    email: string;
+    password: string;
+  }): Promise<User> => {
+    return apiRequest('/auth/register', {
+      method: 'POST',
+      body: JSON.stringify(userData)
+    });
+  },
+
+  getMe: async (): Promise<User> => {
+    return apiRequest('/auth/me');
+  },
+
+  sendVerificationEmail: async (email: string): Promise<EmailVerificationResponse> => {
+    return apiRequest('/auth/send-verification', {
+      method: 'POST',
+      body: JSON.stringify({ email })
+    });
+  },
+
+  checkEmailVerification: async (email: string): Promise<{ email: string; email_verified: boolean; message: string }> => {
+    return apiRequest('/auth/check-email-verification', {
+      method: 'POST',
+      body: JSON.stringify({ email })
+    });
+  },
+
+  verifyEmail: async (token: string): Promise<EmailVerificationResponse> => {
+    return apiRequest('/auth/verify-email', {
+      method: 'POST',
+      body: JSON.stringify({ token })
+    });
+  },
+};
+
+// Public API Functions (no auth required)
+export const publicAPI = {
+  // Products
+  getProducts: async (params?: {
+    limit?: number;
+    offset?: number;
+    category_id?: string;
+    manufacturer?: string;
+    min_price?: number;
+    max_price?: number;
+    min_rating?: number;
+    status?: string;
+    sort_by?: string;
+    sort_order?: string;
+    search?: string;
+  }): Promise<{ items: Product[]; total: number }> => {
+    const query = new URLSearchParams();
+    if (params?.limit) query.append('limit', params.limit.toString());
+    if (params?.offset) query.append('offset', params.offset.toString());
+    if (params?.category_id) query.append('category_id', params.category_id);
+    if (params?.manufacturer) query.append('manufacturer', params.manufacturer);
+    if (params?.min_price) query.append('min_price', params.min_price.toString());
+    if (params?.max_price) query.append('max_price', params.max_price.toString());
+    if (params?.min_rating) query.append('min_rating', params.min_rating.toString());
+    if (params?.status) query.append('status', params.status);
+    if (params?.sort_by) query.append('sort_by', params.sort_by);
+    if (params?.sort_order) query.append('sort_order', params.sort_order);
+    if (params?.search) query.append('search', params.search);
+    
+    const response = await apiRequest(`/products/?${query}`);
+    return {
+      items: response.items || response.products || response,
+      total: response.total || response.length || 0
+    };
+  },
+
+  getProduct: async (productId: string): Promise<Product> => {
+    return apiRequest(`/products/${productId}`);
+  },
+
+  // Categories
+  getCategories: async (): Promise<Category[]> => {
+    return apiRequest('/categories/');
+  },
+
+  // Reviews
+  getReviewsByProduct: async (productId: string): Promise<Review[]> => {
+    return apiRequest(`/reviews/?product_id=${productId}`);
+  },
+
+  getReviewDetail: async (reviewId: string): Promise<Review> => {
+    return apiRequest(`/reviews/${reviewId}`);
+  },
+};
+
+// Review API Functions  
+export const reviewAPI = {
+  // Create review
+  createReview: async (reviewData: {
+    product_id: string;
+    rating: number;
+    title: string;
+    content: string;
+    verified_purchase?: boolean;
+  }): Promise<Review> => {
+    return apiRequest('/reviews/', {
+      method: 'POST',
+      body: JSON.stringify(reviewData)
+    });
+  },
+
+  // Review pros/cons
+  addReviewPros: async (reviewId: string, pros: string[]): Promise<void> => {
+    return apiRequest(`/reviews/${reviewId}/pros`, {
+      method: 'POST',
+      body: JSON.stringify({ pros })
+    });
+  },
+
+  addReviewCons: async (reviewId: string, cons: string[]): Promise<void> => {
+    return apiRequest(`/reviews/${reviewId}/cons`, {
+      method: 'POST',
+      body: JSON.stringify({ cons })
+    });
+  },
+
+  // Review media
+  uploadReviewMedia: async (reviewId: string, formData: FormData): Promise<void> => {
+    const token = getAuthToken();
+    const url = `${API_BASE_URL}/reviews/${reviewId}/media/upload`;
+    
+    const config: RequestInit = {
+      method: 'POST',
+      headers: {
+        ...(token && { Authorization: token }),
+      },
+      body: formData,
+    };
+
+    const response = await fetch(url, config);
+    
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      throw new Error(errorData.detail || `HTTP error! status: ${response.status}`);
+    }
+    
+    return response.json();
+  },
+
+  // Review comments
+  getReviewComments: async (reviewId: string): Promise<any[]> => {
+    return apiRequest(`/reviews/${reviewId}/comments`);
+  },
+
+  addReviewComment: async (reviewId: string, content: string): Promise<any> => {
+    return apiRequest(`/reviews/${reviewId}/comments`, {
+      method: 'POST',
+      body: JSON.stringify({ content })
+    });
+  },
+
+  deleteReviewComment: async (commentId: string): Promise<void> => {
+    return apiRequest(`/reviews/comments/${commentId}`, {
+      method: 'DELETE'
+    });
+  },
+
+  // Review helpful votes
+  markReviewHelpful: async (reviewId: string): Promise<void> => {
+    return apiRequest(`/reviews/${reviewId}/helpful`, {
+      method: 'POST'
+    });
+  },
+
+  unmarkReviewHelpful: async (reviewId: string): Promise<void> => {
+    return apiRequest(`/reviews/${reviewId}/helpful`, {
+      method: 'DELETE'
+    });
+  },
+
+  // Delete review
+  deleteReview: async (reviewId: string): Promise<void> => {
+    return apiRequest(`/reviews/${reviewId}`, {
+      method: 'DELETE'
+    });
+  },
+};
+
+// Review Request API Functions
+export const reviewRequestAPI = {
+  createReviewRequest: async (requestData: {
+    product_name: string;
+    manufacturer: string;
+    product_url: string;
+    reason: string;
+    priority?: string;
+  }): Promise<ReviewRequest> => {
+    return apiRequest('/review-requests/', {
+      method: 'POST',
+      body: JSON.stringify(requestData)
+    });
+  },
+};
+
+// Contact API Functions
+export const contactAPI = {
+  sendMessage: async (messageData: {
+    name: string;
+    email: string;
+    subject: string;
+    message: string;
+  }): Promise<ContactMessage> => {
+    return apiRequest('/contact/', {
+      method: 'POST',
+      body: JSON.stringify(messageData)
+    });
+  },
 };
 
 // Export types for use in components

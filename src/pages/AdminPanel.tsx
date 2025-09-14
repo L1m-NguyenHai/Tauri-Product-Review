@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Users, MessageSquare, Package, TrendingUp, Eye, Edit, Trash2, CheckCircle, XCircle, Loader2, RefreshCw, Plus } from 'lucide-react';
+import { Users, MessageSquare, Package, TrendingUp, Edit, Trash2, CheckCircle, XCircle, Loader2, RefreshCw, Plus } from 'lucide-react';
 import ReviewerBadge from '../components/ReviewerBadge';
 import { useTheme } from '../contexts/ThemeContext';
 import { useAuth } from '../contexts/AuthContext';
@@ -10,7 +10,7 @@ import EditProductModal from '../components/EditProductModal';
 
 const AdminPanel: React.FC = () => {
   const { isDark } = useTheme();
-  const { isAdmin, user } = useAuth();
+  const { isAdmin } = useAuth();
   const [activeTab, setActiveTab] = useState('overview');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -320,30 +320,9 @@ const AdminPanel: React.FC = () => {
     </button>
   );
 
-  // Debug info
-  const debugInfo = {
-    user,
-    isAdmin,
-    hasToken: !!localStorage.getItem('access_token'),
-    tokenType: localStorage.getItem('token_type'),
-    tokenPreview: localStorage.getItem('access_token')?.substring(0, 20) + '...'
-  };
-
   return (
     <div className="space-y-8">
       {NotificationComponent}
-      
-      {/* Debug Panel - Remove in production */}
-      {import.meta.env.DEV && (
-        <div className={`p-4 rounded-lg border-2 border-dashed ${
-          isDark ? 'border-yellow-600 bg-yellow-900/20' : 'border-yellow-500 bg-yellow-50'
-        }`}>
-          <h3 className="font-semibold text-yellow-600 mb-2">Debug Info (Development Only)</h3>
-          <pre className="text-xs text-gray-600 dark:text-gray-400">
-            {JSON.stringify(debugInfo, null, 2)}
-          </pre>
-        </div>
-      )}
       
       {/* Header */}
       <div className={`rounded-xl p-6 ${
@@ -550,9 +529,9 @@ const AdminPanel: React.FC = () => {
                         </td>
                         <td className="py-3 px-4">
                           <div className="flex gap-2">
-                            <button className="p-1 text-blue-500 hover:text-blue-600">
+                            {/* <button className="p-1 text-blue-500 hover:text-blue-600">
                               <Eye className="w-4 h-4" />
-                            </button>
+                            </button> */}
                             <button className="p-1 text-gray-500 hover:text-gray-600">
                               <Edit className="w-4 h-4" />
                             </button>
@@ -905,9 +884,9 @@ const AdminPanel: React.FC = () => {
                           </td>
                           <td className="py-3 px-4">
                             <div className="flex gap-2">
-                              <button className="p-1 text-blue-500 hover:text-blue-600">
+                              {/* <button className="p-1 text-blue-500 hover:text-blue-600">
                                 <Eye className="w-4 h-4" />
-                              </button>
+                              </button> */}
                               <button 
                                 onClick={() => handleEditProduct(product)}
                                 className="p-1 text-gray-500 hover:text-gray-600"

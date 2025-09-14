@@ -14,6 +14,8 @@ import Login from './pages/Login';
 import Register from './pages/Register';
 import About from './pages/About';
 import Contact from './pages/Contact';
+import EmailVerification from './pages/EmailVerification';
+import ResendVerification from './pages/ResendVerification';
 
 // Wrapper component for ProductList to pass filters to Layout
 const ProductListWrapper = () => {
@@ -62,6 +64,8 @@ function App() {
           <Routes>
             <Route path="/login" element={<Login />} />
             <Route path="/register" element={<Register />} />
+            <Route path="/verify-email" element={<EmailVerification />} />
+            <Route path="/resend-verification" element={<ResendVerification />} />
             <Route path="/*" element={
               <Routes>
                 <Route path="/" element={<Layout><Home /></Layout>} />

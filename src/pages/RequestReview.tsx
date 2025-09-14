@@ -4,6 +4,7 @@ import { Package, Link, DollarSign, Tag, FileText, Send, ChevronLeft, ChevronRig
 import { useTheme } from '../contexts/ThemeContext';
 import { useAuth } from '../contexts/AuthContext';
 import { useNotification } from '../components/Notification';
+import { publicAPI, reviewRequestAPI } from '../services/api';
 
 const RequestReview: React.FC = () => {
   const { isDark } = useTheme();
@@ -42,9 +43,7 @@ const RequestReview: React.FC = () => {
     // Gọi API lấy danh mục
     const fetchCategories = async () => {
       try {
-        const res = await fetch("http://localhost:8000/api/v1/categories");
-        if (!res.ok) throw new Error("Không tải được danh mục");
-        const data = await res.json();
+        const data = await publicAPI.getCategories();
         setCategories(data);
       } catch (err) {
         console.error("Lỗi khi load categories:", err);
@@ -115,40 +114,16 @@ const RequestReview: React.FC = () => {
 
     setLoading(true);
 
-    try {
-      const accessToken = localStorage.getItem('access_token');
-      const tokenType = localStorage.getItem('token_type');
-      if (!accessToken || !tokenType) {
-        setLoading(false);
-        showNotification('error', 'You are not logged in or token is invalid!');
-        return;
-      }
-      
+    try {      
       const payload = {
         product_name: formData.productName,
         manufacturer: formData.manufacturer,
-        category_id: formData.category,
         product_url: formData.productUrl,
-        price: formData.price,
-        availability: formData.availability,
-        description: formData.description,
-        reasoning: formData.reasoning,
-        contact_email: formData.contactEmail,
+        reason: formData.reasoning,
+        priority: 'normal'
       };
 
-      const res = await fetch('http://localhost:8000/api/v1/review-requests/', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `${tokenType} ${accessToken}`,
-        },
-        body: JSON.stringify(payload),
-      });
-
-      if (!res.ok) {
-        const err = await res.json();
-        throw new Error(err.detail || 'Failed to submit request');
-      }
+      await reviewRequestAPI.createReviewRequest(payload);
 
       setLoading(false);
       showNotification('success', 'Review request submitted successfully! We\'ll review your suggestion and get back to you soon.');

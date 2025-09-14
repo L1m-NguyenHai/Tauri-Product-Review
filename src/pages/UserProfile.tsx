@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Camera, Edit, Star, Calendar, Award, TrendingUp, X } from 'lucide-react';
+import { Camera, Star, Calendar, X, Shield, AlertCircle, Mail } from 'lucide-react';
 import { useTheme } from '../contexts/ThemeContext';
 import { useAuth } from '../contexts/AuthContext';
 import EditableUserName from '../components/EditableUserName';
+import { userAPI, publicAPI, authAPI } from '../services/api';
 
 const UserProfile: React.FC = () => {
   const { isDark } = useTheme();
@@ -20,31 +21,21 @@ const UserProfile: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
   const [mediaPreview, setMediaPreview] = useState<{url: string, type: string} | null>(null);
+  const [sendingVerification, setSendingVerification] = useState(false);
+  const [verificationMessage, setVerificationMessage] = useState('');
 
 
   // Handle avatar upload
   const handleAvatarUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     if (!event.target.files || event.target.files.length === 0) return;
-  const file = event.target.files[0];
-  const formData = new FormData();
-  formData.append('file', file);
+    const file = event.target.files[0];
+    const formData = new FormData();
+    formData.append('file', file);
     setUploadingAvatar(true);
     try {
-      const tokenType = localStorage.getItem('token_type');
-      const accessToken = localStorage.getItem('access_token');
-      const response = await fetch(`http://127.0.0.1:8000/api/v1/users/profile/avatar`, {
-        method: 'POST',
-        headers: {
-          'Authorization': `${tokenType} ${accessToken}`
-        },
-        body: formData
-      } as any); // 'as any' to avoid TS error for headers+body
-      if (response.ok) {
-        // Reload page or refetch user info
-        window.location.reload();
-      } else {
-        alert('Failed to upload avatar');
-      }
+      await userAPI.updateUserAvatar(formData);
+      // Reload page or refetch user info
+      window.location.reload();
     } catch (error) {
       console.error('Error uploading avatar:', error);
       alert('Error uploading avatar');
@@ -53,48 +44,49 @@ const UserProfile: React.FC = () => {
     }
   };
 
+  // Handle resend verification email
+  const handleResendVerification = async () => {
+    if (!user?.email) return;
+    
+    setSendingVerification(true);
+    setVerificationMessage('');
+    
+    try {
+      await authAPI.sendVerificationEmail(user.email);
+      setVerificationMessage('Email xác nhận đã được gửi thành công!');
+    } catch (error: any) {
+      console.error('Failed to send verification email:', error);
+      setVerificationMessage(error.detail || 'Có lỗi xảy ra khi gửi email xác nhận.');
+    } finally {
+      setSendingVerification(false);
+    }
+  };
+
   useEffect(() => {
     if (!user) return;
     const fetchUserData = async () => {
       setLoading(true);
       try {
-        const tokenType = localStorage.getItem('token_type');
-        const accessToken = localStorage.getItem('access_token');
         // Fetch user statistics
-        const statsResponse = await fetch(`http://127.0.0.1:8000/api/v1/users/profile/stats`, {
-          headers: {
-            'Authorization': `${tokenType} ${accessToken}`
-          }
-        });
-        if (statsResponse.ok) {
-          const statsData = await statsResponse.json();
-          setUserStats(statsData);
-        }
+        const statsData = await userAPI.getUserStats();
+        setUserStats(statsData);
+        
         // Fetch user reviews
-        const reviewsResponse = await fetch(`http://127.0.0.1:8000/api/v1/users/${user.id}/reviews`, {
-          headers: {
-            'Authorization': `${tokenType} ${accessToken}`
-          }
-        });
-        if (reviewsResponse.ok) {
-          const reviewsData = await reviewsResponse.json();
-          // Lấy media của từng review từ API review detail (giống ProductDetail)
-          const reviewsWithMedia = await Promise.all(
-            (reviewsData.items || []).map(async (review: any) => {
-              try {
-                const detailRes = await fetch(`http://127.0.0.1:8000/api/v1/reviews/${review.id}`);
-                if (detailRes.ok) {
-                  const detail = await detailRes.json();
-                  return { ...review, ...detail };
-                }
-              } catch (e) {
-                console.error('Error fetching review detail:', e);
-              }
-              return review;
-            })
-          );
-          setUserReviews(reviewsWithMedia);
-        }
+        const reviewsData = await userAPI.getUserReviews(user.id);
+        
+        // Lấy media của từng review từ API review detail (giống ProductDetail)
+        const reviewsWithMedia = await Promise.all(
+          (reviewsData.items || []).map(async (review: any) => {
+            try {
+              const detail = await publicAPI.getReviewDetail(review.id);
+              return { ...review, ...detail };
+            } catch (e) {
+              console.error('Error fetching review detail:', e);
+            }
+            return review;
+          })
+        );
+        setUserReviews(reviewsWithMedia);
       } catch (error) {
         console.error('Error fetching user data:', error);
       } finally {
@@ -168,6 +160,61 @@ const UserProfile: React.FC = () => {
             <div className="flex items-start justify-between mb-4">
               <div>
                 <EditableUserName name={user.name} isDark={isDark} email={user.email} role={user.role} />
+                
+                {/* Email Verification Status */}
+                <div className="mt-3">
+                  {user.email_verified ? (
+                    <div className="flex items-center gap-2">
+                      <Shield className={`w-4 h-4 text-green-500`} />
+                      <span className={`text-sm font-medium text-green-600 ${isDark ? 'text-green-400' : ''}`}>
+                        Email đã được xác nhận
+                      </span>
+                    </div>
+                  ) : (
+                    <div className="space-y-2">
+                      <div className="flex items-center gap-2">
+                        <AlertCircle className={`w-4 h-4 text-orange-500`} />
+                        <span className={`text-sm font-medium text-orange-600 ${isDark ? 'text-orange-400' : ''}`}>
+                          Email chưa được xác nhận
+                        </span>
+                      </div>
+                      
+                      <div className="flex items-center gap-3">
+                        <button
+                          onClick={handleResendVerification}
+                          disabled={sendingVerification}
+                          className={`flex items-center gap-1 text-xs px-3 py-1 rounded-md transition-colors ${
+                            isDark 
+                              ? 'bg-blue-900 hover:bg-blue-800 text-blue-300 disabled:bg-gray-700 disabled:text-gray-500' 
+                              : 'bg-blue-100 hover:bg-blue-200 text-blue-700 disabled:bg-gray-100 disabled:text-gray-500'
+                          } disabled:cursor-not-allowed`}
+                        >
+                          {sendingVerification ? (
+                            <>
+                              <div className="animate-spin rounded-full h-3 w-3 border-b border-current"></div>
+                              Đang gửi...
+                            </>
+                          ) : (
+                            <>
+                              <Mail className="w-3 h-3" />
+                              Gửi lại email
+                            </>
+                          )}
+                        </button>
+                        
+                        {verificationMessage && (
+                          <span className={`text-xs ${
+                            verificationMessage.includes('thành công') 
+                              ? (isDark ? 'text-green-400' : 'text-green-600')
+                              : (isDark ? 'text-red-400' : 'text-red-600')
+                          }`}>
+                            {verificationMessage}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
 

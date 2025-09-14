@@ -1,6 +1,7 @@
 
 import React, { useState, useRef } from 'react';
 import { useAuth } from '../contexts/AuthContext';
+import { userAPI } from '../services/api';
 import { Star } from 'lucide-react';
 
 interface EditableUserNameProps {
@@ -55,29 +56,14 @@ const EditableUserName: React.FC<EditableUserNameProps> = ({ name, isDark, email
     }
     setLoading(true);
     try {
-      const accessToken = localStorage.getItem('access_token');
-      const tokenType = localStorage.getItem('token_type');
-      if (!accessToken || !tokenType) return;
-      const response = await fetch('http://127.0.0.1:8000/api/v1/users/profile', {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `${tokenType} ${accessToken}`
-        },
-        body: JSON.stringify({ name: value })
-      });
-      if (response.ok) {
-        if (user && setUser) {
-          setUser({ ...user, name: value });
-        }
-        setEditing(false);
-        setShowConfirm(false);
-      } else {
-        const errorData = await response.json();
-        alert(errorData.detail || 'Failed to update name');
+      await userAPI.updateUserProfile({ name: value });
+      if (user && setUser) {
+        setUser({ ...user, name: value });
       }
-    } catch (e) {
-      alert('Failed to update name');
+      setEditing(false);
+      setShowConfirm(false);
+    } catch (error: any) {
+      alert(error.message || 'Failed to update name');
     } finally {
       setLoading(false);
     }
@@ -130,9 +116,8 @@ const EditableUserName: React.FC<EditableUserNameProps> = ({ name, isDark, email
           {role === 'reviewer' && (
             <span
               className="inline-flex items-center gap-1 mt-2 ml-2 px-3 py-1 text-xs font-semibold rounded-full bg-blue-100 text-blue-700"
-              style={{ fontWeight: 600 }}
             >
-              <Star className="w-4 h-4 fill-blue-500 text-blue-500" style={{ marginRight: 2 }} />
+              <Star className="w-4 h-4 fill-blue-500 text-blue-500 mr-0.5" />
               Reviewer
             </span>
           )}

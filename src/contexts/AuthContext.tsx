@@ -1,13 +1,5 @@
 import React, { createContext, useContext, useState } from 'react';
-import axios from 'axios';
-
-interface User {
-  id: string;
-  email: string;
-  name: string;
-  avatar?: string;
-  role: 'user' | 'admin' | 'reviewer';
-}
+import { authAPI, type User } from '../services/api';
 
 interface AuthContextType {
   user: User | null;
@@ -15,6 +7,7 @@ interface AuthContextType {
   login: (email: string, password: string) => Promise<boolean>;
   register: (name: string, email: string, password: string) => Promise<boolean>;
   logout: () => void;
+  refreshUser: () => Promise<void>;
   isAdmin: boolean;
 }
 
@@ -39,20 +32,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       
       if (token && tokenType) {
         try {
-          const response = await axios.get('http://127.0.0.1:8000/api/v1/auth/me', {
-            headers: {
-              Authorization: `${tokenType} ${token}`,
-            },
-          });
-
-          const userData = response.data;
-          setUser({
-            id: userData.id,
-            email: userData.email,
-            name: userData.name,
-            avatar: userData.avatar,
-            role: userData.role,
-          });
+          const userData = await authAPI.getMe();
+          setUser(userData);
         } catch (error) {
           console.error('Failed to restore user session:', error);
           // Clear invalid tokens
@@ -68,61 +49,40 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const login = async (email: string, password: string): Promise<boolean> => {
     try {
       // Authenticate and get the token
-      const loginResponse = await axios.post('http://127.0.0.1:8000/api/v1/auth/login', {
-        email,
-        password,
-      });
+      const { access_token, token_type } = await authAPI.login(email, password);
 
-      const { access_token, token_type } = loginResponse.data;
-
-      // Use the token to fetch user details
-      const userResponse = await axios.get('http://127.0.0.1:8000/api/v1/auth/me', {
-        headers: {
-          Authorization: `${token_type} ${access_token}`,
-        },
-      });
-
-      const userData = userResponse.data;
-
-      // Update the user state with the fetched details
-      setUser({
-        id: userData.id,
-        email: userData.email,
-        name: userData.name,
-        avatar: userData.avatar,
-        role: userData.role,
-      });
-
-      // Optionally store the token in localStorage or cookies
+      // Store tokens
       localStorage.setItem('access_token', access_token);
       localStorage.setItem('token_type', token_type);
 
+      // Use the token to fetch user details
+      const userData = await authAPI.getMe();
+
+      // Update the user state with the fetched details
+      setUser(userData);
+
       return true;
-    } catch (error) {
+    } catch (error: any) {
       console.error('Login failed:', error);
-      return false;
+      
+      // Re-throw error with proper details for the UI to handle
+      if (error.status === 403) {
+        throw new Error('EMAIL_NOT_VERIFIED');
+      } else if (error.status === 401) {
+        throw new Error('INVALID_CREDENTIALS');
+      } else {
+        throw new Error('LOGIN_ERROR');
+      }
     }
   };
 
   const register = async (name: string, email: string, password: string): Promise<boolean> => {
     try {
       // Send registration details to the backend
-      const response = await axios.post('http://127.0.0.1:8000/api/v1/auth/register', {
-        name,
-        email,
-        password,
-      });
-
-      const userData = response.data;
+      const userData = await authAPI.register({ name, email, password });
 
       // Update the user state with the registered user's details
-      setUser({
-        id: userData.id,
-        email: userData.email,
-        name: userData.name,
-        avatar: userData.avatar,
-        role: userData.role,
-      });
+      setUser(userData);
 
       return true;
     } catch (error) {
@@ -137,10 +97,25 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     localStorage.removeItem('token_type');
   };
 
+  const refreshUser = async (): Promise<void> => {
+    const token = localStorage.getItem('access_token');
+    const tokenType = localStorage.getItem('token_type');
+    
+    if (token && tokenType) {
+      try {
+        const userData = await authAPI.getMe();
+        setUser(userData);
+      } catch (error) {
+        console.error('Failed to refresh user data:', error);
+        // Don't clear tokens on refresh failure, user might just be offline
+      }
+    }
+  };
+
   const isAdmin = user?.role === 'admin';
 
   return (
-    <AuthContext.Provider value={{ user, setUser, login, register, logout, isAdmin }}>
+    <AuthContext.Provider value={{ user, setUser, login, register, logout, refreshUser, isAdmin }}>
       {children}
     </AuthContext.Provider>
   );

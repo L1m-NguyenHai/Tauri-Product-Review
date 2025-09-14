@@ -3,19 +3,16 @@ import { NavLink, Link, useLocation } from 'react-router-dom';
 import { 
   Home, 
   Package, 
-  Star, 
-  MessageSquare, 
   User, 
   Settings, 
   Info, 
   Phone,
   PlusCircle,
   Search,
-  Filter,
   Grid,
   List
 } from 'lucide-react';
-import axios from 'axios';
+import { publicAPI } from '../../services/api';
 import { useTheme } from '../../contexts/ThemeContext';
 import { useAuth } from '../../contexts/AuthContext';
 
@@ -45,11 +42,11 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, productFilters }) => {
   useEffect(() => {
     const fetchCategories = async () => {
       try {
-        const response = await axios.get('http://127.0.0.1:8000/api/v1/categories/');
-        if (response.data && Array.isArray(response.data)) {
+        const response = await publicAPI.getCategories();
+        if (response && Array.isArray(response)) {
           setCategories([
             {id: 'all', name: 'All Categories'},
-            ...response.data.map((category: any) => ({
+            ...response.map((category: any) => ({
               id: category.id,
               name: category.name
             }))

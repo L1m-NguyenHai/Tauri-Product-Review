@@ -8,6 +8,7 @@ import ConfirmDialog from '../components/ConfirmDialog';
 import ReviewModal from '../components/ReviewModal/ReviewModal';
 import ReviewerBadge from '../components/ReviewerBadge';
 import EditProductModal from '../components/EditProductModal';
+import { publicAPI, userAPI, reviewAPI } from '../services/api';
 
 const ProductDetail: React.FC = () => {
   const { id } = useParams<{ id: string }>();
@@ -50,8 +51,7 @@ const ProductDetail: React.FC = () => {
     const fetchProductDetails = async () => {
       setLoading(true);
       try {
-        const response = await fetch(`http://localhost:8000/api/v1/products/${id}`);
-        const data = await response.json();
+        const data = await publicAPI.getProduct(id!);
         
         // Ensure images is an array of URLs
         if (data) {
@@ -60,13 +60,13 @@ const ProductDetail: React.FC = () => {
             data.images = data.images.map((imgObj: any) => imgObj.image_url || imgObj.url || imgObj);
           } else if (data.images) {
             // If images is a single object or string
-            if (typeof data.images === 'object' && data.images.image_url) {
-              data.images = [data.images.image_url];
+            if (typeof data.images === 'object' && (data.images as any).image_url) {
+              data.images = [(data.images as any).image_url];
             } else {
-              data.images = [data.images];
+              data.images = [data.images as any];
             }
-          } else if (data.image) {
-            data.images = [data.image];
+          } else if ((data as any).image) {
+            data.images = [(data as any).image];
           } else {
             data.images = [];
           }
@@ -82,16 +82,14 @@ const ProductDetail: React.FC = () => {
     const fetchReviews = async () => {
       try {
         // First get the list of review IDs for this product
-        const response = await fetch(`http://127.0.0.1:8000/api/v1/reviews/?product_id=${id}`);
-        const reviewsList = await response.json();
+        const reviewsList = await publicAPI.getReviewsByProduct(id!);
         
         // Then fetch detailed data for each review including pros, cons and media
         if (reviewsList && reviewsList.length > 0) {
           const detailedReviews = await Promise.all(
             reviewsList.map(async (review: any) => {
               try {
-                const detailResponse = await fetch(`http://127.0.0.1:8000/api/v1/reviews/${review.id}`);
-                return await detailResponse.json();
+                return await publicAPI.getReviewDetail(review.id);
               } catch (error) {
                 console.error(`Error fetching detailed review data for ${review.id}:`, error);
                 return review; // Return original review if detail fetch fails
@@ -121,10 +119,10 @@ const ProductDetail: React.FC = () => {
     }
 
     try {
-      const response = await fetch(`http://127.0.0.1:8000/api/v1/users/${userId}`);
-      const data = await response.json();
-      avatarCache.set(userId, data.avatar);
-      return data.avatar;
+      const data = await userAPI.getUserById(userId);
+      const avatar = data.avatar || 'https://via.placeholder.com/32';
+      avatarCache.set(userId, avatar);
+      return avatar;
     } catch (error) {
       console.error(`Error fetching user data for userId: ${userId}`, error);
       return null;
@@ -133,39 +131,20 @@ const ProductDetail: React.FC = () => {
 
   useEffect(() => {
     const fetchRepliesForReviews = async () => {
-      const accessToken = localStorage.getItem('access_token');
-      const tokenType = localStorage.getItem('token_type');
-      
-      // Skip if no auth token available
-      if (!accessToken || !tokenType) {
-        console.warn('No authentication token available for fetching replies');
-      }
-      
       const updatedReviews = await Promise.all(
         reviews.map(async (review) => {
           if (!review.repliesFetched) {
             try {
-              const response = await fetch(`http://127.0.0.1:8000/api/v1/reviews/${review.id}/comments`, {
-                headers: {
-                  'Authorization': accessToken && tokenType ? `${tokenType} ${accessToken}` : '',
-                  'Content-Type': 'application/json'
-                }
-              });
+              const replies = await reviewAPI.getReviewComments(review.id);
               
-              if (response.ok) {
-                const replies = await response.json();
-                // Ensure consistent field names for each reply
-                const formattedReplies = replies.map((reply: any) => ({
-                  ...reply,
-                  // Ensure we have user_name and user_avatar fields
-                  user_name: reply.user_name || reply.username || 'Anonymous',
-                  user_avatar: reply.user_avatar || reply.avatar || 'https://via.placeholder.com/32'
-                }));
-                return { ...review, replies: formattedReplies, repliesFetched: true };
-              } else {
-                console.error(`Error fetching replies for review ${review.id}: ${response.status}`);
-                return { ...review, replies: [], repliesFetched: true };
-              }
+              // Ensure consistent field names for each reply
+              const formattedReplies = replies.map((reply: any) => ({
+                ...reply,
+                // Ensure we have user_name and user_avatar fields
+                user_name: reply.user_name || reply.username || 'Anonymous',
+                user_avatar: reply.user_avatar || reply.avatar || 'https://via.placeholder.com/32'
+              }));
+              return { ...review, replies: formattedReplies, repliesFetched: true };
             } catch (error) {
               console.error(`Error fetching replies for review ${review.id}:`, error);
               return { ...review, replies: [], repliesFetched: true };

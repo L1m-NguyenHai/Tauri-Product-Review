@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
-import axios from 'axios';
+import { publicAPI } from '../services/api';
 import { useTheme } from '../contexts/ThemeContext';
 import ProductCard from '../components/ProductCard';
 
@@ -50,18 +50,16 @@ const ProductList: React.FC<ProductListProps> = ({
         try {
           // Nếu sortBy là 'rating', chuyển thành 'average_rating' khi gọi API
           const apiSortBy = sortBy === 'rating' ? 'average_rating' : sortBy;
-          const response = await axios.get('http://127.0.0.1:8000/api/v1/products', {
-            params: {
-              search: searchQuery,
-              category_id: selectedCategory !== 'all' ? selectedCategory : undefined,
-              sort_by: apiSortBy,
-              limit: productsPerPage,
-              offset: (currentPage - 1) * productsPerPage
-            }
+          const response = await publicAPI.getProducts({
+            search: searchQuery,
+            category_id: selectedCategory !== 'all' ? selectedCategory : undefined,
+            sort_by: apiSortBy,
+            limit: productsPerPage,
+            offset: (currentPage - 1) * productsPerPage
           });
-          setProducts(response.data.items);
+          setProducts(response.items);
           // Calculate total pages based on total count
-          const totalCount = response.data.total || 0;
+          const totalCount = response.total || 0;
           setTotalPages(Math.ceil(totalCount / productsPerPage));
         } catch (error) {
           console.error('Error fetching products:', error);

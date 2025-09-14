@@ -1,7 +1,10 @@
 from fastapi import APIRouter, HTTPException, status, Depends
 from fastapi.security import HTTPAuthorizationCredentials
-from datetime import timedelta
-from models.schemas import UserCreate, UserLogin, UserResponse, Token
+from datetime import timedelta, datetime
+from models.schemas import (
+    UserCreate, UserLogin, UserResponse, Token, 
+    EmailVerificationRequest, EmailVerificationConfirm
+)
 from auth.security import (
     authenticate_user, 
     create_access_token, 
@@ -11,6 +14,12 @@ from auth.security import (
 )
 from database.connection import get_conn, put_conn
 from psycopg2.extras import RealDictCursor
+from utils.email import (
+    send_verification_email, 
+    send_welcome_email,
+    generate_verification_token,
+    get_verification_expiry
+)
 import logging
 import uuid
 
@@ -31,17 +40,30 @@ def register(user: UserCreate):
                     detail="Email already registered"
                 )
             
-            # Create new user
+            # Create new user with email verification fields
             user_id = str(uuid.uuid4())
             hashed_password = get_password_hash(user.password)
+            verification_token = generate_verification_token()
+            verification_expiry = get_verification_expiry()
             
             cur.execute("""
-                INSERT INTO users (id, email, name, password_hash, avatar, role)
-                VALUES (%s, %s, %s, %s, %s, %s)
+                INSERT INTO users (
+                    id, email, name, password_hash, avatar, role,
+                    email_verified, verification_token, verification_token_expires, 
+                    verification_sent_at
+                )
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 RETURNING *
-            """, (user_id, user.email, user.name, hashed_password, user.avatar, "user"))
+            """, (
+                user_id, user.email, user.name, hashed_password, user.avatar, "user",
+                False, verification_token, verification_expiry, datetime.utcnow()
+            ))
             
             new_user = cur.fetchone()
+            
+            # Send verification email
+            send_verification_email(user.email, verification_token, user.name)
+            
             conn.commit()
             return new_user
             
@@ -61,6 +83,14 @@ def login(user: UserLogin):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Incorrect email or password",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    
+    # Check if email is verified
+    if not authenticated_user.get("email_verified", False):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Please verify your email address before logging in. Check your inbox for the verification email.",
             headers={"WWW-Authenticate": "Bearer"},
         )
     
@@ -210,5 +240,166 @@ def logout_all_devices(current_user: dict = Depends(get_current_user)):
         conn.rollback()
         logger.exception("Error during logout all: %s", e)
         raise HTTPException(status_code=500, detail="Logout failed")
+    finally:
+        put_conn(conn)
+
+@router.post("/send-verification")
+def send_verification(request: EmailVerificationRequest):
+    """
+    Send email verification to registered user
+    """
+    conn = get_conn()
+    try:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            # Check if user exists and is not already verified
+            cur.execute("""
+                SELECT id, name, email, email_verified 
+                FROM users 
+                WHERE email = %s
+            """, (request.email,))
+            
+            user = cur.fetchone()
+            if not user:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="User not found"
+                )
+            
+            if user["email_verified"]:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Email already verified"
+                )
+            
+            # Generate new verification token
+            verification_token = generate_verification_token()
+            verification_expiry = get_verification_expiry()
+            
+            # Update user with new token
+            cur.execute("""
+                UPDATE users 
+                SET verification_token = %s, 
+                    verification_token_expires = %s,
+                    verification_sent_at = %s
+                WHERE id = %s
+            """, (verification_token, verification_expiry, datetime.utcnow(), user["id"]))
+            
+            # Send verification email
+            send_verification_email(user["email"], verification_token, user["name"])
+            
+            conn.commit()
+            
+            return {
+                "message": "Verification email sent successfully",
+                "email": user["email"]
+            }
+            
+    except HTTPException:
+        raise
+    except Exception as e:
+        conn.rollback()
+        logger.exception("Error sending verification email: %s", e)
+        raise HTTPException(status_code=500, detail="Failed to send verification email")
+    finally:
+        put_conn(conn)
+
+@router.post("/verify-email")
+def verify_email(request: EmailVerificationConfirm):
+    """
+    Verify user email with token
+    """
+    conn = get_conn()
+    try:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            # Find user with matching verification token
+            cur.execute("""
+                SELECT id, name, email, email_verified, verification_token_expires
+                FROM users 
+                WHERE verification_token = %s
+            """, (request.token,))
+            
+            user = cur.fetchone()
+            if not user:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Invalid verification token"
+                )
+            
+            if user["email_verified"]:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Email already verified"
+                )
+            
+            # Check if token has expired
+            if user["verification_token_expires"] < datetime.utcnow():
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Verification token has expired"
+                )
+            
+            # Update user as verified and clear verification token
+            cur.execute("""
+                UPDATE users 
+                SET email_verified = TRUE,
+                    verification_token = NULL,
+                    verification_token_expires = NULL,
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE id = %s
+            """, (user["id"],))
+            
+            # Send welcome email
+            send_welcome_email(user["email"], user["name"])
+            
+            conn.commit()
+            
+            return {
+                "message": "Email verified successfully",
+                "email": user["email"],
+                "verified": True
+            }
+            
+    except HTTPException:
+        raise
+    except Exception as e:
+        conn.rollback()
+        logger.exception("Error verifying email: %s", e)
+        raise HTTPException(status_code=500, detail="Failed to verify email")
+    finally:
+        put_conn(conn)
+
+@router.post("/check-email-verification")
+def check_email_verification(request: EmailVerificationRequest):
+    """
+    Check if an email address is verified
+    """
+    conn = get_conn()
+    try:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            # Find user by email
+            cur.execute("""
+                SELECT email, email_verified 
+                FROM users 
+                WHERE email = %s
+            """, (request.email,))
+            
+            user = cur.fetchone()
+            if not user:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="User not found"
+                )
+            
+            return {
+                "email": user["email"],
+                "email_verified": user["email_verified"],
+                "message": "Email is verified" if user["email_verified"] else "Email is not verified"
+            }
+            
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception("Error checking email verification: %s", e)
+        raise HTTPException(status_code=500, detail="Failed to check email verification")
     finally:
         put_conn(conn)

@@ -34,11 +34,18 @@ class UserLogin(BaseModel):
 class UserResponse(UserBase):
     id: UUID
     role: str
+    email_verified: bool
     created_at: datetime
     updated_at: datetime
 
     class Config:
         from_attributes = True
+
+class EmailVerificationRequest(BaseModel):
+    email: EmailStr
+
+class EmailVerificationConfirm(BaseModel):
+    token: str
 
 # Category Models
 class CategoryBase(BaseModel):

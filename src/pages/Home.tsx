@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom';
 import { Star, TrendingUp, Users, Award } from 'lucide-react';
 import { useTheme } from '../contexts/ThemeContext';
 import ProductCard from '../components/ProductCard';
-import axios from 'axios';
+import { publicAPI } from '../services/api';
 
 const Home: React.FC = () => {
   const { isDark } = useTheme();
@@ -39,40 +39,36 @@ const Home: React.FC = () => {
         setLoading(true);
         
         // Fetch latest products (products with few or no reviews)
-        const latestResponse = await axios.get('http://localhost:8000/api/v1/products/', {
-          params: {
-            limit: 3,
-            sort_by: 'created_at',
-            sort_order: 'desc'
-          }
+        const latestResponse = await publicAPI.getProducts({
+          limit: 4,
+          sort_by: 'created_at',
+          sort_order: 'desc'
         });
         
         // Fetch highest rated product for hero section
-        const highestRatedResponse = await axios.get('http://localhost:8000/api/v1/products/', {
-          params: {
-            limit: 1,
-            sort_by: 'average_rating',
-            sort_order: 'desc'
-          }
+        const highestRatedResponse = await publicAPI.getProducts({
+          limit: 1,
+          sort_by: 'average_rating',
+          sort_order: 'desc'
         });
         
         // Fetch categories
-        const categoriesResponse = await axios.get('http://localhost:8000/api/v1/categories/');
+        const categoriesResponse = await publicAPI.getCategories();
         
         // Debug: Log API responses
-        console.log('Latest products response:', latestResponse.data);
-        console.log('Highest rated response:', highestRatedResponse.data);
-        console.log('Categories response:', categoriesResponse.data);
+        console.log('Latest products response:', latestResponse);
+        console.log('Highest rated response:', highestRatedResponse);
+        console.log('Categories response:', categoriesResponse);
         
         // Set the data
-        setLatestProducts(latestResponse.data.items || []);
-        setHighestRatedProduct(highestRatedResponse.data.items?.[0] || null);
-        setCategories(categoriesResponse.data.slice(0, 5) || []); // Limit to 5 categories
+        setLatestProducts(latestResponse.items || []);
+        setHighestRatedProduct(highestRatedResponse.items?.[0] || null);
+        setCategories(categoriesResponse.slice(0, 5) || []); // Limit to 5 categories
         
         // For stats, we'll use static data for now but you can create endpoints for these
         setStats({
           totalReviews: '15,234',
-          productsReviewed: latestResponse.data.total?.toString() || '0',
+          productsReviewed: latestResponse.total?.toString() || '0',
           activeUsers: '45,678',
           expertReviewers: '234'
         });

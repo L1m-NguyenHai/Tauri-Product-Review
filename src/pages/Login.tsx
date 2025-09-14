@@ -1,34 +1,84 @@
-import React, { useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import React, { useState, useEffect } from 'react';
+import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { Eye, EyeOff, Mail, Lock, ArrowLeft, Home } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { useTheme } from '../contexts/ThemeContext';
+import { authAPI } from '../services/api';
 
 const Login: React.FC = () => {
+  const location = useLocation();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
+  const [emailNotVerified, setEmailNotVerified] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [registrationMessage, setRegistrationMessage] = useState('');
   
   const { login } = useAuth();
   const { isDark } = useTheme();
   const navigate = useNavigate();
 
+  // Handle state from registration redirect
+  useEffect(() => {
+    if (location.state?.showEmailVerificationWarning) {
+      setEmailNotVerified(true);
+      setRegistrationMessage(location.state.message || '');
+      
+      if (location.state.email) {
+        setEmail(location.state.email);
+      }
+      
+      // Clear the state to prevent showing on refresh
+      window.history.replaceState({}, document.title);
+    }
+  }, [location.state]);
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
+    // Don't clear emailNotVerified if it was set from registration
+    if (!registrationMessage) {
+      setEmailNotVerified(false);
+    }
     setLoading(true);
 
     try {
-      const success = await login(email, password);
-      if (success) {
-        navigate('/');
-      } else {
-        setError('Invalid email or password');
+      // Check email verification status first
+      const verificationStatus = await authAPI.checkEmailVerification(email);
+      
+      if (!verificationStatus.email_verified) {
+        setEmailNotVerified(true);
+        setError('');
+        setLoading(false);
+        return;
       }
-    } catch (err) {
-      setError('An error occurred during login');
+      
+      // If email is verified, proceed with login
+      await login(email, password);
+      navigate('/');
+    } catch (err: any) {
+      // Handle email verification check errors
+      if (err.message.includes('User not found') || err.message.includes('404')) {
+        setError('Invalid email or password');
+        if (!registrationMessage) {
+          setEmailNotVerified(false);
+        }
+      } else if (err.message === 'EMAIL_NOT_VERIFIED') {
+        setEmailNotVerified(true);
+        setError('');
+      } else if (err.message === 'INVALID_CREDENTIALS') {
+        setError('Invalid email or password');
+        // Only clear emailNotVerified if it wasn't from registration
+        if (!registrationMessage) {
+          setEmailNotVerified(false);
+        }
+      } else {
+        setError('An error occurred during login');
+        if (!registrationMessage) {
+          setEmailNotVerified(false);
+        }
+      }
     } finally {
       setLoading(false);
     }
@@ -85,6 +135,57 @@ const Login: React.FC = () => {
             {error && (
               <div className="bg-red-50 dark:bg-red-900 border border-red-200 dark:border-red-700 text-red-600 dark:text-red-300 px-4 py-3 rounded-lg">
                 {error}
+              </div>
+            )}
+
+            {emailNotVerified && (
+              <div className={`border rounded-lg p-4 ${
+                isDark ? 'bg-orange-900/50 border-orange-700' : 'bg-orange-50 border-orange-200'
+              }`}>
+                <div className="flex items-start gap-3">
+                  <div className={`flex-shrink-0 w-5 h-5 rounded-full flex items-center justify-center ${
+                    isDark ? 'bg-orange-800' : 'bg-orange-100'
+                  }`}>
+                    <Mail className={`w-3 h-3 ${
+                      isDark ? 'text-orange-300' : 'text-orange-600'
+                    }`} />
+                  </div>
+                  <div className="flex-1">
+                    <h3 className={`text-sm font-medium ${
+                      isDark ? 'text-orange-300' : 'text-orange-800'
+                    }`}>
+                      Email chưa được xác nhận
+                    </h3>
+                    <p className={`text-sm mt-1 ${
+                      isDark ? 'text-orange-400' : 'text-orange-700'
+                    }`}>
+                      {registrationMessage || 'Bạn cần xác nhận email trước khi đăng nhập. Kiểm tra hộp thư của bạn.'}
+                    </p>
+                    <div className="mt-3 flex gap-2">
+                      <Link
+                        to="/resend-verification"
+                        state={{ email }}
+                        className={`text-xs px-3 py-1 rounded-md font-medium transition-colors ${
+                          isDark 
+                            ? 'bg-orange-800 hover:bg-orange-700 text-orange-200' 
+                            : 'bg-orange-100 hover:bg-orange-200 text-orange-800'
+                        }`}
+                      >
+                        Gửi lại email xác nhận
+                      </Link>
+                      <a
+                        href="mailto:"
+                        className={`text-xs px-3 py-1 rounded-md font-medium transition-colors border ${
+                          isDark 
+                            ? 'border-orange-700 text-orange-300 hover:bg-orange-900' 
+                            : 'border-orange-200 text-orange-700 hover:bg-orange-50'
+                        }`}
+                      >
+                        Mở email
+                      </a>
+                    </div>
+                  </div>
+                </div>
               </div>
             )}
 

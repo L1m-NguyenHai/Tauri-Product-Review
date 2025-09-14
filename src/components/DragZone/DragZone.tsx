@@ -124,6 +124,7 @@ const DragZone: React.FC<DragZoneProps> = ({
           accept={acceptedTypes.join(',')}
           onChange={handleFileInput}
           className="hidden"
+          aria-label="Select files to upload"
         />
         
         <div className={`transition-all duration-300 ${isDragOver ? 'scale-110' : ''}`}>
