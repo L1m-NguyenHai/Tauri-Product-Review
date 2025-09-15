@@ -81,7 +81,11 @@ const ProductList: React.FC<ProductListProps> = ({
       <div className="flex gap-4">
         <div className="relative">
           <img
-            src={product.image}
+            src={
+              (product.images && product.images.length > 0 && product.images[0].image_url) ||
+              product.display_image ||
+              'https://images.pexels.com/photos/2115256/pexels-photo-2115256.jpeg?auto=compress&cs=tinysrgb&w=300&h=200&dpr=2'
+            }
             alt={product.name}
             className="w-24 h-24 object-contain rounded-lg"
           />

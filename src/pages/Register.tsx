@@ -3,6 +3,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import { Eye, EyeOff, Mail, Lock, User, ArrowLeft, Home, CheckCircle } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { useTheme } from '../contexts/ThemeContext';
+import { validatePassword, getPasswordStrengthColor, getPasswordStrengthText, PasswordValidation } from '../utils/passwordValidation';
 
 const Register: React.FC = () => {
   const [name, setName] = useState('');
@@ -16,6 +17,7 @@ const Register: React.FC = () => {
   const [registrationSuccess, setRegistrationSuccess] = useState(false);
   const [userEmail, setUserEmail] = useState('');
   const [countdown, setCountdown] = useState(3);
+  const [passwordValidation, setPasswordValidation] = useState<PasswordValidation | null>(null);
   
   const { register } = useAuth();
   const { isDark } = useTheme();
@@ -49,13 +51,15 @@ const Register: React.FC = () => {
     e.preventDefault();
     setError('');
 
-    if (password !== confirmPassword) {
-      setError('Passwords do not match');
+    // Validate password strength
+    const validation = validatePassword(password);
+    if (!validation.isValid) {
+      setError(validation.errors[0]); // Show first error
       return;
     }
 
-    if (password.length < 6) {
-      setError('Password must be at least 6 characters');
+    if (password !== confirmPassword) {
+      setError('Passwords do not match');
       return;
     }
 
@@ -261,7 +265,15 @@ const Register: React.FC = () => {
                     type={showPassword ? 'text' : 'password'}
                     required
                     value={password}
-                    onChange={(e) => setPassword(e.target.value)}
+                    onChange={(e) => {
+                      const newPassword = e.target.value;
+                      setPassword(newPassword);
+                      if (newPassword) {
+                        setPasswordValidation(validatePassword(newPassword));
+                      } else {
+                        setPasswordValidation(null);
+                      }
+                    }}
                     className={`w-full pl-10 pr-12 py-3 rounded-lg border transition-colors ${
                       isDark 
                         ? 'bg-gray-700 border-gray-600 text-white placeholder-gray-400 focus:border-blue-500' 
@@ -277,6 +289,36 @@ const Register: React.FC = () => {
                     {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
                   </button>
                 </div>
+                
+                {/* Password Strength Indicator */}
+                {password && passwordValidation && (
+                  <div className="mt-3">
+                    <div className="flex items-center justify-between mb-2">
+                      <span className={`text-sm font-medium ${getPasswordStrengthColor(passwordValidation)}`}>
+                        Password Strength: {getPasswordStrengthText(passwordValidation)}
+                      </span>
+                    </div>
+                    
+                    <div className="space-y-1">
+                      {Object.entries({
+                        'At least 8 characters': passwordValidation.requirements.minLength,
+                        'One uppercase letter': passwordValidation.requirements.hasUppercase,
+                        'One lowercase letter': passwordValidation.requirements.hasLowercase,
+                        'One number': passwordValidation.requirements.hasNumber,
+                        'One special character': passwordValidation.requirements.hasSpecialChar,
+                      }).map(([requirement, met]) => (
+                        <div key={requirement} className="flex items-center text-xs">
+                          <div className={`w-2 h-2 rounded-full mr-2 ${
+                            met ? 'bg-green-500' : (isDark ? 'bg-gray-600' : 'bg-gray-300')
+                          }`} />
+                          <span className={met ? 'text-green-600' : (isDark ? 'text-gray-400' : 'text-gray-500')}>
+                            {requirement}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
 
               <div>

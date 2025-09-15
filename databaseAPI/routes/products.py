@@ -1,5 +1,8 @@
-from fastapi import APIRouter, HTTPException, Query, Depends, status
+from fastapi import APIRouter, HTTPException, Query, Depends, status, File, UploadFile, Form
 from typing import List, Optional
+import tempfile
+import os
+import shutil
 from models.schemas import (
     ProductCreate, ProductUpdate, ProductResponse, ProductFilter,
     ProductFeatureCreate, ProductFeatureResponse,
@@ -91,8 +94,9 @@ def list_products(
             query = f"""
                 SELECT 
                     p.*,
-                    c.name AS category_name
-                FROM products p
+                    c.name AS category_name,
+                    p.display_image
+                FROM products_with_image p
                 LEFT JOIN categories c ON p.category_id = c.id
                 {where_clause}
                 ORDER BY p.{sort_by} {sort_order}
@@ -106,7 +110,7 @@ def list_products(
             count_params = params[:-2]  # Remove limit and offset
             count_query = f"""
                 SELECT COUNT(*) as total
-                FROM products p
+                FROM products_with_image p
                 LEFT JOIN categories c ON p.category_id = c.id
                 {where_clause}
             """
@@ -140,7 +144,7 @@ def get_product(product_id: str):
                 SELECT 
                     p.*,
                     c.name AS category_name
-                FROM products p
+                FROM products_with_image p
                 LEFT JOIN categories c ON p.category_id = c.id
                 WHERE p.id = %s
             """, (product_id,))
@@ -222,15 +226,14 @@ def create_product(
             cur.execute("""
                 INSERT INTO products (
                     id, name, description, category_id, manufacturer, 
-                    price, original_price, product_url, availability, 
-                    status, image
+                    price, product_url, availability, status
                 )
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
                 RETURNING *
             """, (
                 product_id, product.name, product.description, str(product.category_id) if product.category_id else None,
-                product.manufacturer, product.price, product.original_price,
-                product.product_url, product.availability, product.status, product.image
+                product.manufacturer, product.price, 
+                product.product_url, product.availability, product.status
             ))
             
             new_product = cur.fetchone()
@@ -238,7 +241,7 @@ def create_product(
             
             # Get category name
             if new_product["category_id"]:
-                cur.execute("SELECT name FROM categories WHERE id = %s", (new_product["category_id"],))
+                cur.execute("SELECT name FROM categories WHERE id = %s", (str(new_product["category_id"]),))
                 category = cur.fetchone()
                 new_product["category_name"] = category["name"] if category else None
             
@@ -274,7 +277,7 @@ def update_product(
             
             # Verify category exists if provided
             if product_update.category_id:
-                cur.execute("SELECT id FROM categories WHERE id = %s", (product_update.category_id,))
+                cur.execute("SELECT id FROM categories WHERE id = %s", (str(product_update.category_id),))
                 if not cur.fetchone():
                     raise HTTPException(
                         status_code=status.HTTP_400_BAD_REQUEST,
@@ -288,7 +291,11 @@ def update_product(
             for field, value in product_update.dict(exclude_unset=True).items():
                 if value is not None:
                     update_fields.append(f"{field} = %s")
-                    values.append(value)
+                    # Convert UUID to string if needed
+                    if field == 'category_id' and hasattr(value, '__str__'):
+                        values.append(str(value))
+                    else:
+                        values.append(value)
             
             if not update_fields:
                 return existing_product
@@ -309,7 +316,7 @@ def update_product(
             
             # Get category name
             if updated_product["category_id"]:
-                cur.execute("SELECT name FROM categories WHERE id = %s", (updated_product["category_id"],))
+                cur.execute("SELECT name FROM categories WHERE id = %s", (str(updated_product["category_id"]),))
                 category = cur.fetchone()
                 updated_product["category_name"] = category["name"] if category else None
             
@@ -424,12 +431,98 @@ def delete_product_feature(
         put_conn(conn)
 
 # Product Images
+@router.post("/{product_id}/images/upload")
+async def upload_product_image(
+    product_id: str,
+    file: UploadFile = File(...),
+    is_primary: bool = Form(False),
+    sort_order: int = Form(0)
+):
+    """Upload image file for product (supports Discord upload)"""
+    conn = get_conn()
+    try:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            # Verify product exists
+            cur.execute("SELECT id FROM products WHERE id = %s", (product_id,))
+            if not cur.fetchone():
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="Product not found"
+                )
+            
+            # Validate file type
+            if not file.content_type or not file.content_type.startswith('image/'):
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="File must be an image"
+                )
+            
+            # Save file temporarily
+            temp_file_path = None
+            image_url = None
+            
+            try:
+                # Create temporary file
+                with tempfile.NamedTemporaryFile(delete=False, suffix=os.path.splitext(file.filename)[1]) as temp_file:
+                    temp_file_path = temp_file.name
+                    shutil.copyfileobj(file.file, temp_file)
+                
+                # Try Discord upload first
+                try:
+                    from discord_media import upload_media_to_discord
+                    logger.info("Attempting Discord upload for product image...")
+                    image_url = await upload_media_to_discord(temp_file_path)
+                    logger.info(f"Discord upload successful for product image, URL: {image_url}")
+                except Exception as discord_error:
+                    logger.warning(f"Discord upload failed for product image: {discord_error}")
+                    # Fallback: save locally
+                    filename = f"{uuid.uuid4()}{os.path.splitext(file.filename)[1]}"
+                    upload_dir = "uploads/products"
+                    os.makedirs(upload_dir, exist_ok=True)
+                    local_path = os.path.join(upload_dir, filename)
+                    shutil.move(temp_file_path, local_path)
+                    image_url = f"/uploads/products/{filename}"
+                    temp_file_path = None  # File moved, don't delete
+                    
+            finally:
+                # Clean up temporary file if it still exists
+                if temp_file_path and os.path.exists(temp_file_path):
+                    os.unlink(temp_file_path)
+            
+            # If this is set as primary, remove primary from other images
+            if is_primary:
+                cur.execute("""
+                    UPDATE product_images 
+                    SET is_primary = FALSE 
+                    WHERE product_id = %s
+                """, (product_id,))
+            
+            image_id = str(uuid.uuid4())
+            cur.execute("""
+                INSERT INTO product_images (id, product_id, image_url, is_primary, sort_order)
+                VALUES (%s, %s, %s, %s, %s)
+                RETURNING *
+            """, (image_id, product_id, image_url, is_primary, sort_order))
+            
+            new_image = cur.fetchone()
+            conn.commit()
+            return new_image
+            
+    except HTTPException:
+        raise
+    except Exception as e:
+        conn.rollback()
+        logger.exception("Error uploading product image: %s", e)
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        put_conn(conn)
+
 @router.post("/{product_id}/images", response_model=ProductImageResponse)
 def add_product_image(
     product_id: str,
     image: ProductImageCreate
 ):
-    """Add image to product (no admin required)"""
+    """Add image to product via URL (no admin required)"""
     conn = get_conn()
     try:
         with conn.cursor(cursor_factory=RealDictCursor) as cur:

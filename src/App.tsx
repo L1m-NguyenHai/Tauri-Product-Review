@@ -2,6 +2,7 @@ import React from 'react';
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 import { ThemeProvider } from './contexts/ThemeContext';
 import { AuthProvider } from './contexts/AuthContext';
+import { ApiConfigProvider } from './contexts/ApiConfigContext';
 import Layout from './components/Layout/Layout';
 import Home from './pages/Home';
 import ProductList from './pages/ProductList';
@@ -59,29 +60,31 @@ const ProductListWrapper = () => {
 function App() {
   return (
     <ThemeProvider>
-      <AuthProvider>
-        <Router>
-          <Routes>
-            <Route path="/login" element={<Login />} />
-            <Route path="/register" element={<Register />} />
-            <Route path="/verify-email" element={<EmailVerification />} />
-            <Route path="/resend-verification" element={<ResendVerification />} />
-            <Route path="/*" element={
-              <Routes>
-                <Route path="/" element={<Layout><Home /></Layout>} />
-                <Route path="/products" element={<ProductListWrapper />} />
-                <Route path="/products/:id" element={<Layout><ProductDetail /></Layout>} />
-                <Route path="/review/:productId" element={<Layout><ReviewPage /></Layout>} />
-                <Route path="/request-review" element={<Layout><RequestReview /></Layout>} />
-                <Route path="/profile" element={<Layout><UserProfile /></Layout>} />
-                <Route path="/admin" element={<Layout><AdminPanel /></Layout>} />
-                <Route path="/about" element={<Layout><About /></Layout>} />
-                <Route path="/contact" element={<Layout><Contact /></Layout>} />
-              </Routes>
-            } />
-          </Routes>
-        </Router>
-      </AuthProvider>
+      <ApiConfigProvider>
+        <AuthProvider>
+          <Router>
+            <Routes>
+              <Route path="/login" element={<Login />} />
+              <Route path="/register" element={<Register />} />
+              <Route path="/verify-email" element={<EmailVerification />} />
+              <Route path="/resend-verification" element={<ResendVerification />} />
+              <Route path="/*" element={
+                <Routes>
+                  <Route path="/" element={<Layout><Home /></Layout>} />
+                  <Route path="/products" element={<ProductListWrapper />} />
+                  <Route path="/products/:id" element={<Layout><ProductDetail /></Layout>} />
+                  <Route path="/review/:productId" element={<Layout><ReviewPage /></Layout>} />
+                  <Route path="/request-review" element={<Layout><RequestReview /></Layout>} />
+                  <Route path="/profile" element={<Layout><UserProfile /></Layout>} />
+                  <Route path="/admin" element={<Layout><AdminPanel /></Layout>} />
+                  <Route path="/about" element={<Layout><About /></Layout>} />
+                  <Route path="/contact" element={<Layout><Contact /></Layout>} />
+                </Routes>
+              } />
+            </Routes>
+          </Router>
+        </AuthProvider>
+      </ApiConfigProvider>
     </ThemeProvider>
   );
 }

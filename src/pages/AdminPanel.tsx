@@ -822,13 +822,15 @@ const AdminPanel: React.FC = () => {
                         }`}>
                           <td className="py-3 px-4">
                             <div className="flex items-center space-x-3">
-                              {product.image && (
-                                <img 
-                                  src={product.image} 
-                                  alt={product.name}
-                                  className="w-10 h-10 rounded-lg object-cover"
-                                />
-                              )}
+                              <img
+                                src={
+                                  (product.images && product.images.length > 0 && product.images[0].image_url) ||
+                                  product.display_image ||
+                                  'https://images.pexels.com/photos/2115256/pexels-photo-2115256.jpeg?auto=compress&cs=tinysrgb&w=300&h=200&dpr=2'
+                                }
+                                alt={product.name}
+                                className="w-10 h-10 rounded-lg object-cover"
+                              />
                               <div>
                                 <div className={`font-medium ${
                                   isDark ? 'text-white' : 'text-gray-900'
@@ -848,11 +850,6 @@ const AdminPanel: React.FC = () => {
                           }`}>
                             <div className="flex flex-col">
                               <span className="font-medium">${product.price}</span>
-                              {product.original_price && (
-                                <span className="text-sm text-gray-500 line-through">
-                                  ${product.original_price}
-                                </span>
-                              )}
                             </div>
                           </td>
                           <td className="py-3 px-4">

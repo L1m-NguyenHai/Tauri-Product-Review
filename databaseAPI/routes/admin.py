@@ -553,3 +553,233 @@ def get_recent_activity(
         raise HTTPException(status_code=500, detail=str(e))
     finally:
         put_conn(conn)
+
+# Store Links Management
+@router.get("/products/{product_id}/store-links")
+def get_product_store_links(
+    product_id: str,
+    current_admin: dict = Depends(get_current_admin_user)
+):
+    """Get all store links for a product (admin only)"""
+    conn = get_conn()
+    try:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            cur.execute("""
+                SELECT id, product_id, store_name, price, url, is_official, created_at
+                FROM store_links 
+                WHERE product_id = %s
+                ORDER BY created_at DESC
+            """, (product_id,))
+            
+            store_links = cur.fetchall()
+            return {"store_links": [dict(link) for link in store_links]}
+            
+    except Exception as e:
+        logger.exception("Error getting store links: %s", e)
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        put_conn(conn)
+
+@router.post("/products/{product_id}/store-links")
+def add_store_link(
+    product_id: str,
+    store_link_data: dict,
+    current_admin: dict = Depends(get_current_admin_user)
+):
+    """Add a new store link for a product (admin only)"""
+    conn = get_conn()
+    try:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            # Validate product exists
+            cur.execute("SELECT id FROM products WHERE id = %s", (product_id,))
+            if not cur.fetchone():
+                raise HTTPException(status_code=404, detail="Product not found")
+            
+            # Insert new store link
+            cur.execute("""
+                INSERT INTO store_links (product_id, store_name, price, url, is_official)
+                VALUES (%s, %s, %s, %s, %s)
+                RETURNING id, product_id, store_name, price, url, is_official, created_at
+            """, (
+                product_id,
+                store_link_data.get("store_name"),
+                store_link_data.get("price"),
+                store_link_data.get("url"),
+                store_link_data.get("is_official", False)
+            ))
+            
+            new_link = cur.fetchone()
+            conn.commit()
+            
+            return {"message": "Store link added successfully", "store_link": dict(new_link)}
+            
+    except Exception as e:
+        conn.rollback()
+        logger.exception("Error adding store link: %s", e)
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        put_conn(conn)
+
+@router.put("/store-links/{link_id}")
+def update_store_link(
+    link_id: str,
+    store_link_data: dict,
+    current_admin: dict = Depends(get_current_admin_user)
+):
+    """Update a store link (admin only)"""
+    conn = get_conn()
+    try:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            # Check if link exists
+            cur.execute("SELECT id FROM store_links WHERE id = %s", (link_id,))
+            if not cur.fetchone():
+                raise HTTPException(status_code=404, detail="Store link not found")
+            
+            # Update store link
+            cur.execute("""
+                UPDATE store_links 
+                SET store_name = %s, price = %s, url = %s, is_official = %s
+                WHERE id = %s
+                RETURNING id, product_id, store_name, price, url, is_official, created_at
+            """, (
+                store_link_data.get("store_name"),
+                store_link_data.get("price"),
+                store_link_data.get("url"),
+                store_link_data.get("is_official", False),
+                link_id
+            ))
+            
+            updated_link = cur.fetchone()
+            conn.commit()
+            
+            return {"message": "Store link updated successfully", "store_link": dict(updated_link)}
+            
+    except Exception as e:
+        conn.rollback()
+        logger.exception("Error updating store link: %s", e)
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        put_conn(conn)
+
+@router.delete("/store-links/{link_id}")
+def delete_store_link(
+    link_id: str,
+    current_admin: dict = Depends(get_current_admin_user)
+):
+    """Delete a store link (admin only)"""
+    conn = get_conn()
+    try:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            # Check if link exists
+            cur.execute("SELECT id, product_id FROM store_links WHERE id = %s", (link_id,))
+            link = cur.fetchone()
+            if not link:
+                raise HTTPException(status_code=404, detail="Store link not found")
+            
+            # Delete store link
+            cur.execute("DELETE FROM store_links WHERE id = %s", (link_id,))
+            conn.commit()
+            
+            return {"message": "Store link deleted successfully"}
+            
+    except Exception as e:
+        conn.rollback()
+        logger.exception("Error deleting store link: %s", e)
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        put_conn(conn)
+
+@router.delete("/products/{product_id}")
+def delete_product(
+    product_id: str,
+    current_admin: dict = Depends(get_current_admin_user)
+):
+    """Delete a product and all related data (admin only)"""
+    conn = get_conn()
+    try:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            # Check if product exists
+            cur.execute("SELECT id, name FROM products WHERE id = %s", (product_id,))
+            product = cur.fetchone()
+            if not product:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="Product not found"
+                )
+            
+            # Delete in order to avoid foreign key constraints
+            # 1. Delete review comments first
+            cur.execute("""
+                DELETE FROM review_comments 
+                WHERE review_id IN (
+                    SELECT id FROM reviews WHERE product_id = %s
+                )
+            """, (product_id,))
+            
+            # 2. Delete review helpful votes
+            cur.execute("""
+                DELETE FROM review_helpful_votes 
+                WHERE review_id IN (
+                    SELECT id FROM reviews WHERE product_id = %s
+                )
+            """, (product_id,))
+            
+            # 3. Delete review media
+            cur.execute("""
+                DELETE FROM review_media 
+                WHERE review_id IN (
+                    SELECT id FROM reviews WHERE product_id = %s
+                )
+            """, (product_id,))
+            
+            # 4. Delete review pros
+            cur.execute("""
+                DELETE FROM review_pros 
+                WHERE review_id IN (
+                    SELECT id FROM reviews WHERE product_id = %s
+                )
+            """, (product_id,))
+            
+            # 5. Delete review cons
+            cur.execute("""
+                DELETE FROM review_cons 
+                WHERE review_id IN (
+                    SELECT id FROM reviews WHERE product_id = %s
+                )
+            """, (product_id,))
+            
+            # 6. Delete reviews
+            cur.execute("DELETE FROM reviews WHERE product_id = %s", (product_id,))
+            
+            # 7. Delete product images
+            cur.execute("DELETE FROM product_images WHERE product_id = %s", (product_id,))
+            
+            # 8. Delete product specifications
+            cur.execute("DELETE FROM product_specifications WHERE product_id = %s", (product_id,))
+            
+            # 9. Delete product features
+            cur.execute("DELETE FROM product_features WHERE product_id = %s", (product_id,))
+            
+            # 10. Delete store links
+            cur.execute("DELETE FROM store_links WHERE product_id = %s", (product_id,))
+            
+            # 11. Delete review requests
+            cur.execute("DELETE FROM review_requests WHERE product_id = %s", (product_id,))
+            
+            # 12. Finally delete the product
+            cur.execute("DELETE FROM products WHERE id = %s", (product_id,))
+            
+            conn.commit()
+            
+            logger.info(f"Product {product['name']} ({product_id}) deleted by admin {current_admin['email']}")
+            
+            return {"message": f"Product '{product['name']}' and all related data deleted successfully"}
+            
+    except HTTPException:
+        raise
+    except Exception as e:
+        conn.rollback()
+        logger.exception("Error deleting product: %s", e)
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        put_conn(conn)

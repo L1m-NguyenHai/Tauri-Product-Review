@@ -5,13 +5,13 @@ import { useTheme } from '../contexts/ThemeContext';
 interface Product {
   id: string;
   name: string;
-  image: string;
   price: number | string;
-  original_price?: number | string;
   availability: string;
   category_name?: string;
   average_rating: number | string;
   review_count: number;
+  images?: { image_url: string }[];
+  display_image?: string;
 }
 
 interface ProductCardProps {
@@ -33,12 +33,6 @@ const formatPrice = (price: number | string): string => {
     .replace(/\B(?=(\d{3})+(?!\d))/g, '.') + 'đ';
 };
 
-// Calculate discount percentage
-const calculateDiscount = (originalPrice: number, currentPrice: number): number => {
-  if (!originalPrice || originalPrice <= currentPrice) return 0;
-  return Math.round(((originalPrice - currentPrice) / originalPrice) * 100);
-};
-
 const ProductCard: React.FC<ProductCardProps> = ({ 
   product, 
   showCategory = true,
@@ -56,7 +50,11 @@ const ProductCard: React.FC<ProductCardProps> = ({
     >
       <div className="relative">
         <img
-          src={product.image || 'https://images.pexels.com/photos/2115256/pexels-photo-2115256.jpeg?auto=compress&cs=tinysrgb&w=300&h=200&dpr=2'}
+          src={
+            (product.images && product.images.length > 0 && product.images[0].image_url) ||
+            product.display_image ||
+            'https://images.pexels.com/photos/2115256/pexels-photo-2115256.jpeg?auto=compress&cs=tinysrgb&w=300&h=200&dpr=2'
+          }
           alt={product.name}
           className={imageClassName}
         />
@@ -102,18 +100,6 @@ const ProductCard: React.FC<ProductCardProps> = ({
           }`}>
             {formatPrice(product.price)}
           </span>
-          {product.original_price && product.original_price > product.price && (
-            <>
-              <span className={`text-xs line-through ${
-                isDark ? 'text-gray-400' : 'text-gray-500'
-              }`}>
-                {formatPrice(product.original_price)}
-              </span>
-              <span className="text-xs text-red-500">
-                (-{calculateDiscount(Number(product.original_price), Number(product.price))}%)
-              </span>
-            </>
-          )}
         </div>
         
         {/* Rating and review count */}

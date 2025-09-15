@@ -1,9 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
-import { Eye, EyeOff, Mail, Lock, ArrowLeft, Home } from 'lucide-react';
+import { Eye, EyeOff, Mail, Lock, ArrowLeft, Home, Settings, RotateCcw } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { useTheme } from '../contexts/ThemeContext';
-import { authAPI } from '../services/api';
+import { useApiConfig } from '../contexts/ApiConfigContext';
 
 const Login: React.FC = () => {
   const location = useLocation();
@@ -14,9 +14,12 @@ const Login: React.FC = () => {
   const [emailNotVerified, setEmailNotVerified] = useState(false);
   const [loading, setLoading] = useState(false);
   const [registrationMessage, setRegistrationMessage] = useState('');
+  const [showApiConfig, setShowApiConfig] = useState(false);
+  const [tempBaseUrl, setTempBaseUrl] = useState('');
   
   const { login } = useAuth();
   const { isDark } = useTheme();
+  const { baseUrl, setBaseUrl, resetToDefault } = useApiConfig();
   const navigate = useNavigate();
 
   // Handle state from registration redirect
@@ -34,6 +37,26 @@ const Login: React.FC = () => {
     }
   }, [location.state]);
 
+  // Initialize temp base URL when modal opens
+  useEffect(() => {
+    if (showApiConfig) {
+      setTempBaseUrl(baseUrl);
+    }
+  }, [showApiConfig, baseUrl]);
+
+  const handleSaveApiConfig = () => {
+    if (tempBaseUrl.trim()) {
+      setBaseUrl(tempBaseUrl.trim());
+      setShowApiConfig(false);
+    }
+  };
+
+  const handleResetApiConfig = () => {
+    resetToDefault();
+    setTempBaseUrl('');
+    setShowApiConfig(false);
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
@@ -44,22 +67,15 @@ const Login: React.FC = () => {
     setLoading(true);
 
     try {
-      // Check email verification status first
-      const verificationStatus = await authAPI.checkEmailVerification(email);
-      
-      if (!verificationStatus.email_verified) {
-        setEmailNotVerified(true);
-        setError('');
-        setLoading(false);
-        return;
-      }
-      
-      // If email is verified, proceed with login
+      // Directly attempt login - backend will handle email verification check
       await login(email, password);
       navigate('/');
     } catch (err: any) {
-      // Handle email verification check errors
-      if (err.message.includes('User not found') || err.message.includes('404')) {
+      // Handle backend errors
+      if (err.message.includes('Please verify your email address') || err.message.includes('403')) {
+        setEmailNotVerified(true);
+        setError('');
+      } else if (err.message.includes('Incorrect email or password') || err.message.includes('401')) {
         setError('Invalid email or password');
         if (!registrationMessage) {
           setEmailNotVerified(false);
@@ -69,7 +85,6 @@ const Login: React.FC = () => {
         setError('');
       } else if (err.message === 'INVALID_CREDENTIALS') {
         setError('Invalid email or password');
-        // Only clear emailNotVerified if it wasn't from registration
         if (!registrationMessage) {
           setEmailNotVerified(false);
         }
@@ -101,6 +116,19 @@ const Login: React.FC = () => {
         <span className="text-sm font-medium">Back to Home</span>
       </Link>
 
+      {/* API Config Button */}
+      <button
+        onClick={() => setShowApiConfig(!showApiConfig)}
+        className={`fixed top-6 right-6 flex items-center gap-2 px-4 py-2 rounded-lg transition-colors ${
+          isDark 
+            ? 'bg-gray-800 hover:bg-gray-700 text-gray-300 hover:text-white border border-gray-700' 
+            : 'bg-white hover:bg-gray-50 text-gray-600 hover:text-gray-900 border border-gray-200'
+        } shadow-sm`}
+      >
+        <Settings className="w-4 h-4" />
+        <span className="text-sm font-medium">API Config</span>
+      </button>
+
       <div className="max-w-md w-full space-y-8">
         <div className="text-center">
           <Link to="/" className="inline-flex items-center gap-2 mb-6">
@@ -125,6 +153,81 @@ const Login: React.FC = () => {
             Sign in to your LimReview account
           </p>
         </div>
+
+        {/* API Configuration Panel */}
+        {showApiConfig && (
+          <div className={`rounded-xl p-6 shadow-lg border ${
+            isDark ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-100'
+          }`}>
+            <div className="flex items-center gap-3 mb-4">
+              <Settings className="w-5 h-5 text-orange-500" />
+              <h3 className={`text-lg font-semibold ${
+                isDark ? 'text-white' : 'text-gray-900'
+              }`}>
+                API Configuration
+              </h3>
+            </div>
+            
+            <div className="space-y-4">
+              <div>
+                <label className={`block text-sm font-medium mb-2 ${
+                  isDark ? 'text-gray-300' : 'text-gray-700'
+                }`}>
+                  Backend API Base URL
+                </label>
+                <input
+                  type="url"
+                  value={tempBaseUrl}
+                  onChange={(e) => setTempBaseUrl(e.target.value)}
+                  placeholder="http://localhost:8000/api/v1"
+                  className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500 ${
+                    isDark 
+                      ? 'bg-gray-700 border-gray-600 text-white placeholder-gray-400' 
+                      : 'bg-white border-gray-300 text-gray-900 placeholder-gray-500'
+                  }`}
+                />
+                <p className={`mt-1 text-xs ${
+                  isDark ? 'text-gray-400' : 'text-gray-500'
+                }`}>
+                  Current: {baseUrl}
+                </p>
+              </div>
+              
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={handleSaveApiConfig}
+                  className="flex-1 bg-orange-600 hover:bg-orange-700 text-white px-4 py-2 rounded-lg font-medium transition-colors"
+                >
+                  Save
+                </button>
+                <button
+                  type="button"
+                  onClick={handleResetApiConfig}
+                  className={`flex items-center justify-center gap-2 px-4 py-2 rounded-lg border transition-colors ${
+                    isDark 
+                      ? 'border-gray-600 text-gray-300 hover:bg-gray-700' 
+                      : 'border-gray-300 text-gray-700 hover:bg-gray-50'
+                  }`}
+                >
+                  <RotateCcw className="w-4 h-4" />
+                  Reset
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setShowApiConfig(false)}
+                  className={`px-4 py-2 rounded-lg border transition-colors ${
+                    isDark 
+                      ? 'border-gray-600 text-gray-300 hover:bg-gray-700' 
+                      : 'border-gray-300 text-gray-700 hover:bg-gray-50'
+                  }`}
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
 
         <div className={`rounded-xl p-8 shadow-lg border ${
           isDark ? 'bg-gray-800' : 'bg-white'

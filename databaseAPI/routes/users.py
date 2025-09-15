@@ -225,7 +225,7 @@ def get_user_by_id(user_id: str):
     try:
         with conn.cursor(cursor_factory=RealDictCursor) as cur:
             cur.execute("""
-                SELECT id, email, name, avatar, role, created_at, updated_at
+                SELECT id, email, name, avatar, role, email_verified, created_at, updated_at
                 FROM users 
                 WHERE id = %s
             """, (user_id,))

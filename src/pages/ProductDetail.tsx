@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { useParams, Link } from 'react-router-dom';
-import { Star, Heart, Share2, Reply, ChevronDown, ChevronUp, ZoomIn, X, ChevronLeft, ChevronRight, Edit2, ExternalLink } from 'lucide-react';
+import { useParams, Link, useNavigate } from 'react-router-dom';
+import { Star, Heart, Share2, Reply, ChevronDown, ChevronUp, ZoomIn, X, ChevronLeft, ChevronRight, Edit2, ExternalLink, Trash2 } from 'lucide-react';
 import { useTheme } from '../contexts/ThemeContext';
 import { useAuth } from '../contexts/AuthContext';
 import LazyImage from '../components/LazyImage';
@@ -12,6 +12,7 @@ import { publicAPI, userAPI, reviewAPI } from '../services/api';
 
 const ProductDetail: React.FC = () => {
   const { id } = useParams<{ id: string }>();
+  const navigate = useNavigate();
   const { isDark } = useTheme();
   const { user, isAdmin } = useAuth();
     const [product, setProduct] = useState<any | null>(null);
@@ -28,7 +29,7 @@ const ProductDetail: React.FC = () => {
     const [isEditProductModalOpen, setIsEditProductModalOpen] = useState(false);
   const [confirmDialog, setConfirmDialog] = useState<{
     isOpen: boolean;
-    type: 'review' | 'comment';
+    type: 'review' | 'comment' | 'product';
     id: string;
     title: string;
     message: string;
@@ -53,20 +54,21 @@ const ProductDetail: React.FC = () => {
       try {
         const data = await publicAPI.getProduct(id!);
         
-        // Ensure images is an array of URLs
+        // Handle product images - keep as objects with image_url
         if (data) {
           if (Array.isArray(data.images)) {
-            // If images is array of objects, map to URLs
-            data.images = data.images.map((imgObj: any) => imgObj.image_url || imgObj.url || imgObj);
-          } else if (data.images) {
-            // If images is a single object or string
-            if (typeof data.images === 'object' && (data.images as any).image_url) {
-              data.images = [(data.images as any).image_url];
-            } else {
-              data.images = [data.images as any];
-            }
-          } else if ((data as any).image) {
-            data.images = [(data as any).image];
+            // Images is already an array of objects with image_url
+            // No need to transform, just use directly
+          } else if (data.display_image) {
+            // If no images array but has display_image, create array with one object
+            data.images = [{
+              image_url: data.display_image,
+              id: 'display',
+              is_primary: true,
+              product_id: data.id,
+              sort_order: 0,
+              created_at: data.created_at || new Date().toISOString()
+            }];
           } else {
             data.images = [];
           }
@@ -120,12 +122,17 @@ const ProductDetail: React.FC = () => {
 
     try {
       const data = await userAPI.getUserById(userId);
-      const avatar = data.avatar || 'https://via.placeholder.com/32';
+      // Check if avatar exists and is a valid URL, otherwise use placeholder
+      const avatar = data.avatar && data.avatar.trim() !== '' 
+        ? data.avatar 
+        : 'https://via.placeholder.com/32';
       avatarCache.set(userId, avatar);
       return avatar;
     } catch (error) {
       console.error(`Error fetching user data for userId: ${userId}`, error);
-      return null;
+      const fallbackAvatar = 'https://via.placeholder.com/32';
+      avatarCache.set(userId, fallbackAvatar);
+      return fallbackAvatar;
     }
   };
 
@@ -509,11 +516,55 @@ const ProductDetail: React.FC = () => {
     });
   };
 
+  const handleConfirmDeleteProduct = () => {
+    if (!product) return;
+    setConfirmDialog({
+      isOpen: true,
+      type: 'product',
+      id: product.id,
+      title: 'Xóa sản phẩm',
+      message: `Bạn có chắc chắn muốn xóa sản phẩm "${product.name}"? Tất cả đánh giá và dữ liệu liên quan sẽ bị xóa vĩnh viễn. Hành động này không thể hoàn tác.`
+    });
+  };
+
+  const deleteProduct = async (productId: string) => {
+    try {
+      const accessToken = localStorage.getItem('access_token');
+      const tokenType = localStorage.getItem('token_type');
+      
+      if (!accessToken || !tokenType) {
+        alert('Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.');
+        return;
+      }
+
+      const response = await fetch(`http://127.0.0.1:8000/api/v1/admin/products/${productId}`, {
+        method: 'DELETE',
+        headers: {
+          'Authorization': `${tokenType} ${accessToken}`
+        }
+      });
+
+      if (response.ok) {
+        alert('Sản phẩm đã được xóa thành công');
+        navigate('/'); // Redirect to home page after successful deletion
+      } else {
+        const errorData = await response.text();
+        console.error('Failed to delete product:', errorData);
+        alert('Không thể xóa sản phẩm. Vui lòng thử lại.');
+      }
+    } catch (error) {
+      console.error('Error deleting product:', error);
+      alert('Đã xảy ra lỗi khi xóa sản phẩm.');
+    }
+  };
+
   const handleConfirmAction = () => {
     if (confirmDialog.type === 'review') {
       deleteReview(confirmDialog.id);
-    } else {
+    } else if (confirmDialog.type === 'comment') {
       deleteComment(confirmDialog.id);
+    } else if (confirmDialog.type === 'product') {
+      deleteProduct(confirmDialog.id);
     }
   };
 
@@ -686,14 +737,6 @@ const ProductDetail: React.FC = () => {
       .replace(/\B(?=(\d{3})+(?!\d))/g, '.') + 'đ';
   };
 
-  // Calculate discount percentage
-  const calculateDiscount = (originalPrice: number | string, currentPrice: number | string): number => {
-    const origPrice = typeof originalPrice === 'string' ? parseFloat(originalPrice) : originalPrice;
-    const currPrice = typeof currentPrice === 'string' ? parseFloat(currentPrice) : currentPrice;
-    if (!origPrice || origPrice <= currPrice) return 0;
-    return Math.round(((origPrice - currPrice) / origPrice) * 100);
-  };
-
   return (
     <div className="max-w-7xl mx-auto px-4 py-6">
       {/* Product and Image Section - Clean and Compact */}
@@ -711,8 +754,8 @@ const ProductDetail: React.FC = () => {
             >
               <LazyImage
                 src={product.images && product.images.length > 0 
-                  ? product.images[activeImage] || product.image 
-                  : product.image || 'https://www.svgrepo.com/show/508699/landscape-placeholder.svg'}
+                  ? (product.images[activeImage]?.image_url || product.images[activeImage])
+                  : (product.display_image || 'https://www.svgrepo.com/show/508699/landscape-placeholder.svg')}
                 alt={product.name}
                 fadeIn={true}
                 className="max-h-full max-w-full object-contain shadow-lg transition-all duration-300"
@@ -769,7 +812,7 @@ const ProductDetail: React.FC = () => {
                   className="flex items-center justify-start gap-3 overflow-x-auto w-full pb-2 px-10 scroll-smooth hide-scrollbar"
                   ref={thumbnailsContainerRef}
                 >
-                  {product.images.map((img: string, index: number) => (
+                  {product.images.map((img: any, index: number) => (
                     <button
                       key={index}
                       ref={index === activeImage ? activeThumbRef : null}
@@ -781,7 +824,7 @@ const ProductDetail: React.FC = () => {
                       }`}
                     >
                       <img 
-                        src={img} 
+                        src={img?.image_url || img} 
                         alt={`${product.name} - Image ${index + 1}`} 
                         className="h-full w-full object-cover"
                         loading="lazy"
@@ -842,48 +885,86 @@ const ProductDetail: React.FC = () => {
               </span>
             </div>
             
-            {/* Price Section */}
-            <div className="mb-4">
-              <div className="flex items-end gap-2">
-                <span className={`font-bold ${isDark ? 'text-green-400' : 'text-green-600'} text-2xl`}>
-                  {formatPrice(product.price)}
-                </span>
-                {product.original_price && parseFloat(product.original_price) > parseFloat(product.price) && (
-                  <>
-                    <span className="text-sm text-gray-500 line-through">
-                      {formatPrice(product.original_price)}
-                    </span>
-                    <span className="text-xs font-medium bg-red-100 text-red-800 px-1.5 py-0.5 rounded">
-                      -{calculateDiscount(product.original_price, product.price)}%
-                    </span>
-                  </>
-                )}
+            {/* Store Links Section - Moved up to replace price */}
+            {product.store_links && product.store_links.length > 0 && (
+              <div className="mb-4">
+                <h3 className={`text-sm font-medium mb-3 ${isDark ? 'text-gray-300' : 'text-gray-700'}`}>
+                  Mua sản phẩm tại:
+                </h3>
+                <div className="grid grid-cols-1 gap-2">
+                  {product.store_links.map((link: any) => (
+                    <a
+                      key={link.id}
+                      href={link.url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className={`block p-3 rounded-lg border transition-all hover:shadow-md ${
+                        isDark 
+                          ? 'border-gray-600 hover:border-blue-500 bg-gray-700' 
+                          : 'border-gray-200 hover:border-blue-500 bg-gray-50'
+                      } ${link.is_official ? 'ring-1 ring-blue-500 ring-opacity-30' : ''}`}
+                    >
+                      <div className="flex justify-between items-center">
+                        <div className="flex-1">
+                          <div className="flex items-center gap-2 mb-1">
+                            <h4 className={`font-medium text-sm ${isDark ? 'text-white' : 'text-gray-900'}`}>
+                              {link.store_name}
+                            </h4>
+                            {link.is_official && (
+                              <span className="text-xs bg-blue-100 text-blue-800 px-2 py-0.5 rounded">
+                                Official
+                              </span>
+                            )}
+                          </div>
+                          {link.price && (
+                            <div className={`text-lg font-bold ${isDark ? 'text-green-400' : 'text-green-600'}`}>
+                              {formatPrice(link.price)}
+                            </div>
+                          )}
+                        </div>
+                        <ExternalLink className="w-4 h-4 text-gray-400 ml-2" />
+                      </div>
+                    </a>
+                  ))}
+                </div>
               </div>
-              <div className={`mt-1 text-xs ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>
-                {product.availability === 'Available' && (
-                  <span className="text-green-500">● Available</span>
-                )}
-                {product.availability === 'Out of Stock' && (
-                  <span className="text-red-500">● Out of Stock</span>
-                )}
-                {product.availability === 'Pre-order' && (
-                  <span className="text-blue-500">● Pre-order</span>
-                )}
-              </div>
+            )}
+
+            {/* Availability Status */}
+            <div className={`mb-4 text-xs ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>
+              {product.availability === 'Available' && (
+                <span className="text-green-500">● Available</span>
+              )}
+              {product.availability === 'Out of Stock' && (
+                <span className="text-red-500">● Out of Stock</span>
+              )}
+              {product.availability === 'Pre-order' && (
+                <span className="text-blue-500">● Pre-order</span>
+              )}
             </div>
             
             {/* Action Buttons */}
             <div className="flex gap-2 mt-4">
                 {/* Admin Edit Button */}
                 {isAdmin && (
-                  <button
-                    onClick={() => setIsEditProductModalOpen(true)}
-                    className="flex items-center gap-2 px-3 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded-lg font-medium transition-colors text-sm"
-                    title="Edit Product"
-                  >
-                    <Edit2 className="w-4 h-4" />
-                    Edit
-                  </button>
+                  <>
+                    <button
+                      onClick={() => setIsEditProductModalOpen(true)}
+                      className="flex items-center gap-2 px-3 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded-lg font-medium transition-colors text-sm"
+                      title="Edit Product"
+                    >
+                      <Edit2 className="w-4 h-4" />
+                      Edit
+                    </button>
+                    <button
+                      onClick={handleConfirmDeleteProduct}
+                      className="flex items-center gap-2 px-3 py-2 bg-red-500 hover:bg-red-600 text-white rounded-lg font-medium transition-colors text-sm"
+                      title="Delete Product"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                      Delete
+                    </button>
+                  </>
                 )}
               {user ? (
                 <button
@@ -949,8 +1030,8 @@ const ProductDetail: React.FC = () => {
           <div className="relative w-full h-full max-w-4xl max-h-[80vh] flex items-center justify-center p-10">
             <LazyImage
               src={product.images && product.images.length > 0 
-                ? product.images[activeImage] || product.image 
-                : product.image || 'https://www.svgrepo.com/show/508699/landscape-placeholder.svg'}
+                ? (product.images[activeImage]?.image_url || product.images[activeImage])
+                : (product.display_image || 'https://www.svgrepo.com/show/508699/landscape-placeholder.svg')}
               alt={product.name}
               className="max-h-full max-w-full object-contain"
               fadeIn={true}
@@ -1058,53 +1139,6 @@ const ProductDetail: React.FC = () => {
           </p>
         </div>
       </div>
-
-      {/* Store Links Section */}
-      {product.store_links && product.store_links.length > 0 && (
-        <div className={`mt-6 rounded-lg ${isDark ? 'bg-gray-800' : 'bg-white'} shadow-sm p-6`}>
-          <h2 className={`text-lg font-bold mb-4 ${isDark ? 'text-white' : 'text-gray-900'}`}>
-            Mua sản phẩm tại
-          </h2>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {product.store_links.map((link: any) => (
-              <a
-                key={link.id}
-                href={link.url}
-                target="_blank"
-                rel="noopener noreferrer"
-                className={`block p-4 rounded-lg border transition-all hover:shadow-md ${
-                  isDark 
-                    ? 'border-gray-600 hover:border-blue-500 bg-gray-700' 
-                    : 'border-gray-200 hover:border-blue-500 bg-gray-50'
-                } ${link.is_official ? 'ring-2 ring-blue-500 ring-opacity-20' : ''}`}
-              >
-                <div className="flex justify-between items-start mb-2">
-                  <h3 className={`font-semibold text-sm ${isDark ? 'text-white' : 'text-gray-900'}`}>
-                    {link.store_name}
-                  </h3>
-                  <div className="flex items-center gap-2">
-                    {link.is_official && (
-                      <span className="text-xs bg-blue-100 text-blue-800 px-2 py-1 rounded">
-                        Official
-                      </span>
-                    )}
-                    <ExternalLink className="w-4 h-4 text-gray-400" />
-                  </div>
-                </div>
-                {link.price && (
-                  <div className={`text-lg font-bold mb-2 ${isDark ? 'text-green-400' : 'text-green-600'}`}>
-                    {formatPrice(link.price)}
-                  </div>
-                )}
-                <div className={`text-xs ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>
-                  Click để xem tại {link.store_name}
-                </div>
-              </a>
-            ))}
-          </div>
-        </div>
-      )}
-
 
       {/* Reviews Section - Cleaner design */}
       <div className={`mt-6 rounded-lg ${isDark ? 'bg-gray-800' : 'bg-white'} shadow-sm p-6`}>
@@ -1529,8 +1563,8 @@ const ProductDetail: React.FC = () => {
             id: product.id,
             name: product.name,
             image: Array.isArray(product.images) && product.images.length > 0 
-              ? product.images[0] 
-              : 'https://via.placeholder.com/64'
+              ? (typeof product.images[0] === 'object' ? product.images[0].image_url : product.images[0])
+              : product.display_image || 'https://via.placeholder.com/64'
           }}
           onSubmit={handleReviewSubmit}
         />

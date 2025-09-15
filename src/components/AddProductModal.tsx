@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react';
-import { X, Package, Loader2 } from 'lucide-react';
+import { X, Package, Loader2, Plus, Trash2 } from 'lucide-react';
 import { useTheme } from '../contexts/ThemeContext';
-import { adminAPI, type Category, type ProductInput, type ReviewRequest } from '../services/api';
+import { adminAPI, type Category, type ProductInput, type ReviewRequest, type StoreLinkInput } from '../services/api';
 import { useNotification } from './Notification';
+import DragZone from './DragZone/DragZone';
 
 interface AddProductModalProps {
   isOpen: boolean;
@@ -27,14 +28,14 @@ const AddProductModal: React.FC<AddProductModalProps> = ({
     name: '',
     description: '',
     manufacturer: '',
-    price: 0,
-    original_price: undefined,
     product_url: '',
     availability: 'Available',
     status: 'active',
-    image: '',
     category_id: ''
   });
+
+  const [storeLinks, setStoreLinks] = useState<StoreLinkInput[]>([]);
+  const [images, setImages] = useState<File[]>([]);
 
   const [errors, setErrors] = useState<Record<string, string>>({});
 
@@ -69,33 +70,31 @@ const AddProductModal: React.FC<AddProductModalProps> = ({
     }
   };
 
-  // Format number as VND string
-  const formatVND = (value: number) => {
-    if (!value) return '';
-    return value.toLocaleString('vi-VN') + ' ₫';
+  // Handle price for store links
+  const handleStoreLinkPriceInput = (index: number, value: string) => {
+    setStoreLinks(prev => prev.map((link, i) =>
+      i === index ? { ...link, price: value === '' ? 0 : parseInt(value, 10) } : link
+    ));
   };
 
-  // Only allow numbers for price/original_price
-  const handlePriceInput = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const { name, value } = e.target;
-    // Allow empty string for controlled input
-    if (value === '') {
-      setFormData(prev => ({
-        ...prev,
-        [name]: ''
-      }));
-    } else if (/^\d+$/.test(value)) {
-      setFormData(prev => ({
-        ...prev,
-        [name]: parseInt(value, 10)
-      }));
-    }
-    if (errors[name]) {
-      setErrors(prev => ({
-        ...prev,
-        [name]: ''
-      }));
-    }
+  // Store links management
+  const addStoreLink = () => {
+    setStoreLinks(prev => [...prev, {
+      store_name: '',
+      price: 0,
+      url: '',
+      is_official: false
+    }]);
+  };
+
+  const updateStoreLink = (index: number, field: keyof StoreLinkInput, value: any) => {
+    setStoreLinks(prev => prev.map((link, i) => 
+      i === index ? { ...link, [field]: value } : link
+    ));
+  };
+
+  const removeStoreLink = (index: number) => {
+    setStoreLinks(prev => prev.filter((_, i) => i !== index));
   };
 
   // For other fields
@@ -128,14 +127,6 @@ const AddProductModal: React.FC<AddProductModalProps> = ({
       newErrors.manufacturer = 'Manufacturer is required';
     }
 
-    if (formData.price <= 0) {
-      newErrors.price = 'Price must be greater than 0';
-    }
-
-    if (formData.original_price && formData.original_price <= formData.price) {
-      newErrors.original_price = 'Original price must be greater than current price';
-    }
-
     if (!formData.product_url.trim()) {
       newErrors.product_url = 'Product URL is required';
     } else if (!/^https?:\/\/.+/.test(formData.product_url)) {
@@ -152,31 +143,64 @@ const AddProductModal: React.FC<AddProductModalProps> = ({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    
-    if (!validateForm()) {
-      return;
-    }
-
+    if (!validateForm()) return;
     setLoading(true);
     try {
-      const product = await adminAPI.createProduct(formData);
+      // Calculate price from store links
+      const lowestPrice = storeLinks.length > 0 
+        ? Math.min(...storeLinks.filter(link => link.price > 0).map(link => link.price))
+        : 0;
+      
+      // 1. Tạo sản phẩm với price tính từ store links
+      const productData = {
+        ...formData,
+        price: lowestPrice
+      };
+      const product = await adminAPI.createProduct(productData);
+      
+      // 2. Upload ảnh nếu có
+      if (images.length > 0) {
+        for (let i = 0; i < images.length; i++) {
+          try {
+            await adminAPI.uploadProductImage(product.id.toString(), images[i], i === 0);
+          } catch (error) {
+            console.error(`Failed to upload image ${i + 1}:`, error);
+            // Try fallback to URL method if upload endpoint doesn't exist
+            try {
+              await adminAPI.addProductImage(product.id.toString(), { 
+                image_url: URL.createObjectURL(images[i]), 
+                is_primary: i === 0 
+              });
+            } catch (fallbackError) {
+              console.error(`Fallback image upload also failed for image ${i + 1}:`, fallbackError);
+              showNotification('warning', `Failed to upload image: ${images[i].name}`);
+            }
+          }
+        }
+      }
+      
+      // 3. Thêm store links nếu có
+      if (storeLinks.length > 0) {
+        for (const link of storeLinks) {
+          await adminAPI.addStoreLink(product.id.toString(), link);
+        }
+      }
       showNotification('success', 'Product created successfully');
       onProductCreated(product);
       onClose();
-      
       // Reset form
       setFormData({
         name: '',
         description: '',
         manufacturer: '',
         price: 0,
-        original_price: undefined,
         product_url: '',
         availability: 'Available',
         status: 'active',
-        image: '',
         category_id: ''
       });
+      setStoreLinks([]);
+      setImages([]);
       setErrors({});
     } catch (error) {
       console.error('Failed to create product:', error);
@@ -335,69 +359,57 @@ const AddProductModal: React.FC<AddProductModalProps> = ({
             </div>
           </div>
 
-          {/* Price and Original Price */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-              <label className={`block text-sm font-medium mb-2 ${
-                isDark ? 'text-gray-300' : 'text-gray-700'
-              }`}>
-                Price (VND) *
-              </label>
-              {formData.price !== undefined && formData.price !== null && formData.price !== 0 && (
-                <div className="mb-1 text-xs text-blue-600 font-semibold">
-                  {formatVND(Number(formData.price))}
-                </div>
-              )}
-              <input
-                type="text"
-                name="price"
-                inputMode="numeric"
-                value={formData.price === 0 ? '' : formData.price}
-                onChange={handlePriceInput}
-                className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 ${
-                  isDark 
-                    ? 'bg-gray-700 border-gray-600 text-white placeholder-gray-400' 
-                    : 'bg-white border-gray-300 text-gray-900 placeholder-gray-500'
-                } ${errors.price ? 'border-red-500' : ''}`}
-                placeholder="Enter price in vnđ"
-                disabled={loading}
-                autoComplete="off"
-              />
-              {errors.price && (
-                <p className="mt-1 text-sm text-red-500">{errors.price}</p>
-              )}
-            </div>
+          {/* Store Links */}
+          <div>
+            <label className={`block text-sm font-medium mb-2 ${isDark ? 'text-gray-300' : 'text-gray-700'}`}>
+              Store Links
+            </label>
+            {storeLinks.map((link, idx) => (
+              <div key={idx} className="flex items-center gap-2 mb-2">
+                <input
+                  type="text"
+                  placeholder="Store Name"
+                  value={link.store_name}
+                  onChange={e => updateStoreLink(idx, 'store_name', e.target.value)}
+                  className="px-2 py-1 border rounded w-1/4"
+                  disabled={loading}
+                />
+                <input
+                  type="text"
+                  placeholder="Price"
+                  value={link.price === 0 ? '' : link.price}
+                  onChange={e => handleStoreLinkPriceInput(idx, e.target.value)}
+                  className="px-2 py-1 border rounded w-1/4"
+                  disabled={loading}
+                />
+                <input
+                  type="url"
+                  placeholder="URL"
+                  value={link.url}
+                  onChange={e => updateStoreLink(idx, 'url', e.target.value)}
+                  className="px-2 py-1 border rounded w-1/2"
+                  disabled={loading}
+                />
+                <button type="button" onClick={() => removeStoreLink(idx)} disabled={loading} className="text-red-500 hover:text-red-700"><Trash2 size={18} /></button>
+              </div>
+            ))}
+            <button type="button" onClick={addStoreLink} disabled={loading} className="flex items-center gap-1 text-blue-500 hover:text-blue-700 mt-2"><Plus size={16} /> Add Store Link</button>
+          </div>
 
-            <div>
-              <label className={`block text-sm font-medium mb-2 ${
-                isDark ? 'text-gray-300' : 'text-gray-700'
-              }`}>
-                Original Price (VND)
-              </label>
-              {formData.original_price !== undefined && formData.original_price !== null && formData.original_price !== 0 && (
-                <div className="mb-1 text-xs text-blue-600 font-semibold">
-                  {formatVND(Number(formData.original_price))}
-                </div>
-              )}
-              <input
-                type="text"
-                name="original_price"
-                inputMode="numeric"
-                value={formData.original_price === 0 || formData.original_price === undefined ? '' : formData.original_price}
-                onChange={handlePriceInput}
-                className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 ${
-                  isDark 
-                    ? 'bg-gray-700 border-gray-600 text-white placeholder-gray-400' 
-                    : 'bg-white border-gray-300 text-gray-900 placeholder-gray-500'
-                } ${errors.original_price ? 'border-red-500' : ''}`}
-                placeholder="Original Price"
-                disabled={loading}
-                autoComplete="off"
-              />
-              {errors.original_price && (
-                <p className="mt-1 text-sm text-red-500">{errors.original_price}</p>
-              )}
-            </div>
+          {/* Upload Images */}
+          <div>
+            <label className={`block text-sm font-medium mb-3 ${isDark ? 'text-gray-300' : 'text-gray-700'}`}>
+              Product Images
+            </label>
+            
+            <DragZone
+              onFilesSelected={(files: File[]) => setImages(files)}
+              acceptedTypes={['image/*']}
+              maxFiles={10}
+              title="Upload Product Images"
+              description="Click to upload or drag and drop"
+              className="mb-4"
+            />
           </div>
 
           {/* Product URL */}
@@ -423,28 +435,6 @@ const AddProductModal: React.FC<AddProductModalProps> = ({
             {errors.product_url && (
               <p className="mt-1 text-sm text-red-500">{errors.product_url}</p>
             )}
-          </div>
-
-          {/* Image URL */}
-          <div>
-            <label className={`block text-sm font-medium mb-2 ${
-              isDark ? 'text-gray-300' : 'text-gray-700'
-            }`}>
-              Image URL
-            </label>
-            <input
-              type="url"
-              name="image"
-              value={formData.image}
-              onChange={handleInputChange}
-              className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 ${
-                isDark 
-                  ? 'bg-gray-700 border-gray-600 text-white placeholder-gray-400' 
-                  : 'bg-white border-gray-300 text-gray-900 placeholder-gray-500'
-              }`}
-              placeholder="https://example.com/image.jpg"
-              disabled={loading}
-            />
           </div>
 
           {/* Availability and Status */}

@@ -1,14 +1,19 @@
 import React, { useState, useEffect } from 'react';
-import { X, Package, Loader2, Save } from 'lucide-react';
+import { X, Package, Loader2, Save, Plus, Trash2 } from 'lucide-react';
 import { useTheme } from '../contexts/ThemeContext';
-import { adminAPI, type Category, type ProductInput, type Product } from '../services/api';
+import { adminAPI, type Category, type ProductInput, type Product, type StoreLinkInput } from '../services/api';
 import { useNotification } from './Notification';
+import DragZone from './DragZone/DragZone';
 
 interface EditProductModalProps {
   isOpen: boolean;
   onClose: () => void;
   onProductUpdated: (product: Product) => void;
   product: Product | null;
+}
+
+interface ExtendedStoreLinkInput extends StoreLinkInput {
+  id?: number;
 }
 
 const EditProductModal: React.FC<EditProductModalProps> = ({
@@ -22,41 +27,63 @@ const EditProductModal: React.FC<EditProductModalProps> = ({
   const [loading, setLoading] = useState(false);
   const [categories, setCategories] = useState<Category[]>([]);
   const [loadingCategories, setLoadingCategories] = useState(false);
+  const [storeLinks, setStoreLinks] = useState<ExtendedStoreLinkInput[]>([]);
+  const [loadingStoreLinks, setLoadingStoreLinks] = useState(false);
+  const [uploadedImages, setUploadedImages] = useState<File[]>([]);
+  const [existingImages, setExistingImages] = useState<{id: string, url: string}[]>([]);
 
   const [formData, setFormData] = useState<ProductInput>({
     name: '',
     description: '',
     manufacturer: '',
-    price: 0,
-    original_price: undefined,
     product_url: '',
     availability: 'Available',
     status: 'active',
-    image: '',
     category_id: ''
+  });
+
+  const [newStoreLink, setNewStoreLink] = useState<StoreLinkInput>({
+    store_name: '',
+    url: '',
+    price: 0,
+    is_official: false
   });
 
   const [errors, setErrors] = useState<Record<string, string>>({});
 
-  // Load categories and populate form when modal opens
+  // Load categories, store links, and populate form when modal opens
   useEffect(() => {
-    if (isOpen) {
+    if (isOpen && product) {
       loadCategories();
-      
+      loadStoreLinks();
       // Populate form with product data
-      if (product) {
-        setFormData({
-          name: product.name,
-          description: product.description,
-          manufacturer: product.manufacturer,
-          price: product.price,
-          original_price: product.original_price,
-          product_url: product.product_url,
-          availability: product.availability,
-          status: product.status,
-          image: product.image || '',
-          category_id: product.category_id
-        });
+      setFormData({
+        name: product.name,
+        description: product.description,
+        manufacturer: product.manufacturer,
+        product_url: product.product_url,
+        availability: product.availability,
+        status: product.status,
+        category_id: product.category_id
+      });
+      setUploadedImages([]);
+      // Load existing images
+      if (product.images && Array.isArray(product.images)) {
+        const formattedImages = product.images.map(img => {
+          // Handle both object and string formats
+          if (typeof img === 'object' && img.image_url) {
+            return { id: img.id, url: img.image_url };
+          } else if (typeof img === 'string') {
+            return { id: `temp-${Date.now()}-${Math.random()}`, url: img };
+          }
+          return null;
+        }).filter((img): img is {id: string, url: string} => img !== null);
+        setExistingImages(formattedImages);
+      } else if (product.display_image) {
+        // Fallback to display_image if images array is not available
+        setExistingImages([{ id: `display-${Date.now()}`, url: product.display_image }]);
+      } else {
+        setExistingImages([]);
       }
     }
   }, [isOpen, product]);
@@ -74,22 +101,47 @@ const EditProductModal: React.FC<EditProductModalProps> = ({
     }
   };
 
+  const loadStoreLinks = async () => {
+    if (!product) return;
+    
+    setLoadingStoreLinks(true);
+    try {
+      const response = await adminAPI.getProductStoreLinks(product.id.toString());
+      setStoreLinks(response.store_links || []);
+    } catch (error) {
+      console.error('Failed to load store links:', error);
+      showNotification('error', 'Failed to load store links');
+    } finally {
+      setLoadingStoreLinks(false);
+    }
+  };
+
+  // Handle price for store links
+  const handleStoreLinkPriceInput = (index: number, value: string) => {
+    setStoreLinks(prev => prev.map((link, i) =>
+      i === index ? { ...link, price: value === '' ? 0 : parseInt(value, 10) } : link
+    ));
+  };
+
+  const updateStoreLink = (index: number, field: keyof ExtendedStoreLinkInput, value: any) => {
+    setStoreLinks(prev => prev.map((link, i) => 
+      i === index ? { ...link, [field]: value } : link
+    ));
+  };
+
+  const removeStoreLink = (index: number) => {
+    setStoreLinks(prev => prev.filter((_, i) => i !== index));
+  };
+
+
+
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
     const { name, value } = e.target;
     
-    // Handle number inputs
-    if (name === 'price' || name === 'original_price') {
-      const numValue = parseFloat(value) || 0;
-      setFormData(prev => ({
-        ...prev,
-        [name]: numValue
-      }));
-    } else {
-      setFormData(prev => ({
-        ...prev,
-        [name]: value
-      }));
-    }
+    setFormData(prev => ({
+      ...prev,
+      [name]: value
+    }));
 
     // Clear error when user starts typing
     if (errors[name]) {
@@ -97,6 +149,70 @@ const EditProductModal: React.FC<EditProductModalProps> = ({
         ...prev,
         [name]: ''
       }));
+    }
+  };
+
+
+
+  const addStoreLinkAPI = async () => {
+    if (!product || !newStoreLink.store_name || !newStoreLink.url || newStoreLink.price <= 0) {
+      showNotification('error', 'Please fill all store link fields');
+      return;
+    }
+
+    try {
+      const response = await adminAPI.addStoreLink(product.id.toString(), {
+        store_name: newStoreLink.store_name,
+        url: newStoreLink.url,
+        price: newStoreLink.price,
+        is_official: false
+      });
+      
+      const addedStoreLink = response.store_link;
+      setStoreLinks(prev => [...prev, addedStoreLink]);
+      setNewStoreLink({ store_name: '', url: '', price: 0, is_official: false });
+      showNotification('success', 'Store link added successfully');
+    } catch (error) {
+      console.error('Failed to add store link:', error);
+      showNotification('error', 'Failed to add store link');
+    }
+  };
+
+
+
+  const deleteStoreLinkAPI = async (storeLinkId: number) => {
+    if (!product) return;
+
+    try {
+      await adminAPI.deleteStoreLink(storeLinkId.toString());
+      setStoreLinks(prev => prev.filter(link => link.id !== storeLinkId));
+      showNotification('success', 'Store link deleted successfully');
+      
+      // Update the product price to reflect new lowest price
+      const remainingPrices = storeLinks.filter(link => link.id !== storeLinkId).map(link => link.price);
+      if (remainingPrices.length > 0) {
+        const lowestPrice = Math.min(...remainingPrices);
+        setFormData(prev => ({ ...prev, price: lowestPrice }));
+      } else {
+        setFormData(prev => ({ ...prev, price: 0 }));
+      }
+    } catch (error) {
+      console.error('Failed to delete store link:', error);
+      showNotification('error', 'Failed to delete store link');
+    }
+  };
+
+
+
+  // Xóa ảnh cũ
+  const handleDeleteExistingImage = async (imageId: string) => {
+    if (!product) return;
+    try {
+      await adminAPI.deleteProductImage(imageId);
+      setExistingImages(prev => prev.filter(img => img.id !== imageId));
+      showNotification('success', 'Image deleted');
+    } catch (error) {
+      showNotification('error', 'Failed to delete image');
     }
   };
 
@@ -115,14 +231,6 @@ const EditProductModal: React.FC<EditProductModalProps> = ({
       newErrors.manufacturer = 'Manufacturer is required';
     }
 
-    if (formData.price <= 0) {
-      newErrors.price = 'Price must be greater than 0';
-    }
-
-    if (formData.original_price && formData.original_price <= formData.price) {
-      newErrors.original_price = 'Original price must be greater than current price';
-    }
-
     if (!formData.product_url.trim()) {
       newErrors.product_url = 'Product URL is required';
     } else if (!/^https?:\/\/.+/.test(formData.product_url)) {
@@ -139,19 +247,59 @@ const EditProductModal: React.FC<EditProductModalProps> = ({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    
-    if (!validateForm() || !product) {
-      return;
-    }
-
+    if (!validateForm() || !product) return;
     setLoading(true);
     try {
-      const updatedProduct = await adminAPI.updateProduct(product.id, formData);
+      // Calculate price from store links
+      const lowestPrice = storeLinks.length > 0 
+        ? Math.min(...storeLinks.filter(link => link.price > 0).map(link => link.price))
+        : 0;
+      
+      // Prepare clean data for API with auto-calculated price
+      const updatedFormData: Partial<ProductInput> = {
+        name: formData.name,
+        description: formData.description,
+        manufacturer: formData.manufacturer,
+        price: lowestPrice,
+        product_url: formData.product_url,
+        availability: formData.availability,
+        status: formData.status,
+        category_id: formData.category_id
+      };
+      
+      // Remove undefined values
+      const cleanedData = Object.fromEntries(
+        Object.entries(updatedFormData).filter(([_, v]) => v !== undefined && v !== null && v !== '')
+      );
+      
+      console.log('Updating product with data:', cleanedData);
+      const updatedProduct = await adminAPI.updateProduct(product.id.toString(), cleanedData);
+      
+      // Upload new images
+      if (uploadedImages.length > 0) {
+        for (let i = 0; i < uploadedImages.length; i++) {
+          try {
+            await adminAPI.uploadProductImage(product.id.toString(), uploadedImages[i], i === 0);
+          } catch (error) {
+            console.error(`Failed to upload image ${i + 1}:`, error);
+            // Try fallback to URL method if upload endpoint doesn't exist
+            try {
+              await adminAPI.addProductImage(product.id.toString(), { 
+                image_url: URL.createObjectURL(uploadedImages[i]), 
+                is_primary: i === 0 
+              });
+            } catch (fallbackError) {
+              console.error(`Fallback image upload also failed for image ${i + 1}:`, fallbackError);
+              showNotification('warning', `Failed to upload image: ${uploadedImages[i].name}`);
+            }
+          }
+        }
+      }
+      
       showNotification('success', 'Product updated successfully');
       onProductUpdated(updatedProduct);
       onClose();
     } catch (error) {
-      console.error('Failed to update product:', error);
       showNotification('error', 'Failed to update product');
     } finally {
       setLoading(false);
@@ -162,6 +310,8 @@ const EditProductModal: React.FC<EditProductModalProps> = ({
     if (!loading) {
       onClose();
       setErrors({});
+      setNewStoreLink({ store_name: '', url: '', price: 0, is_official: false });
+      setUploadedImages([]);
     }
   };
 
@@ -307,59 +457,100 @@ const EditProductModal: React.FC<EditProductModalProps> = ({
             </div>
           </div>
 
-          {/* Price and Original Price */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-              <label className={`block text-sm font-medium mb-2 ${
-                isDark ? 'text-gray-300' : 'text-gray-700'
-              }`}>
-                Price ($) *
-              </label>
-              <input
-                type="number"
-                name="price"
-                value={formData.price}
-                onChange={handleInputChange}
-                min="0"
-                step="0.01"
-                className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 ${
-                  isDark 
-                    ? 'bg-gray-700 border-gray-600 text-white placeholder-gray-400' 
-                    : 'bg-white border-gray-300 text-gray-900 placeholder-gray-500'
-                } ${errors.price ? 'border-red-500' : ''}`}
-                placeholder="0.00"
-                disabled={loading}
-              />
-              {errors.price && (
-                <p className="mt-1 text-sm text-red-500">{errors.price}</p>
-              )}
-            </div>
-
-            <div>
-              <label className={`block text-sm font-medium mb-2 ${
-                isDark ? 'text-gray-300' : 'text-gray-700'
-              }`}>
-                Original Price ($)
-              </label>
-              <input
-                type="number"
-                name="original_price"
-                value={formData.original_price || ''}
-                onChange={handleInputChange}
-                min="0"
-                step="0.01"
-                className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 ${
-                  isDark 
-                    ? 'bg-gray-700 border-gray-600 text-white placeholder-gray-400' 
-                    : 'bg-white border-gray-300 text-gray-900 placeholder-gray-500'
-                } ${errors.original_price ? 'border-red-500' : ''}`}
-                placeholder="Optional"
-                disabled={loading}
-              />
-              {errors.original_price && (
-                <p className="mt-1 text-sm text-red-500">{errors.original_price}</p>
-              )}
-            </div>
+          {/* Store Links */}
+          <div>
+            <label className={`block text-sm font-medium mb-2 ${isDark ? 'text-gray-300' : 'text-gray-700'}`}>
+              Store Links
+            </label>
+            
+            {loadingStoreLinks ? (
+              <div className="flex items-center justify-center py-4">
+                <Loader2 className="w-6 h-6 animate-spin text-blue-500" />
+                <span className="ml-2 text-sm text-gray-500">Loading store links...</span>
+              </div>
+            ) : (
+              <>
+                {/* Existing store links */}
+                {storeLinks.map((link, idx) => (
+                  <div key={link.id || idx} className={`flex items-center gap-2 mb-2 p-2 border rounded ${isDark ? 'border-gray-600 bg-gray-700' : 'border-gray-300 bg-gray-50'}`}>
+                    <input
+                      type="text"
+                      placeholder="Store Name"
+                      value={link.store_name}
+                      onChange={e => updateStoreLink(idx, 'store_name', e.target.value)}
+                      className={`px-2 py-1 border rounded w-1/4 ${isDark ? 'bg-gray-600 border-gray-500 text-white' : 'bg-white border-gray-300'}`}
+                      disabled={loading}
+                    />
+                    <input
+                      type="text"
+                      placeholder="Price"
+                      value={link.price === 0 ? '' : link.price}
+                      onChange={e => handleStoreLinkPriceInput(idx, e.target.value)}
+                      className={`px-2 py-1 border rounded w-1/4 ${isDark ? 'bg-gray-600 border-gray-500 text-white' : 'bg-white border-gray-300'}`}
+                      disabled={loading}
+                    />
+                    <input
+                      type="url"
+                      placeholder="URL"
+                      value={link.url}
+                      onChange={e => updateStoreLink(idx, 'url', e.target.value)}
+                      className={`px-2 py-1 border rounded flex-1 ${isDark ? 'bg-gray-600 border-gray-500 text-white' : 'bg-white border-gray-300'}`}
+                      disabled={loading}
+                    />
+                    <button 
+                      type="button" 
+                      onClick={() => link.id ? deleteStoreLinkAPI(link.id) : removeStoreLink(idx)} 
+                      disabled={loading} 
+                      className="text-red-500 hover:text-red-700 p-1"
+                      title="Delete store link"
+                    >
+                      <Trash2 size={18} />
+                    </button>
+                  </div>
+                ))}
+                
+                {/* Add new store link */}
+                <div className={`flex items-center gap-2 mb-2 p-2 border-2 border-dashed rounded ${isDark ? 'border-gray-600' : 'border-gray-300'}`}>
+                  <input
+                    type="text"
+                    placeholder="Store Name"
+                    value={newStoreLink.store_name}
+                    onChange={e => setNewStoreLink((prev: StoreLinkInput) => ({ ...prev, store_name: e.target.value }))}
+                    className={`px-2 py-1 border rounded w-1/4 ${isDark ? 'bg-gray-600 border-gray-500 text-white' : 'bg-white border-gray-300'}`}
+                    disabled={loading}
+                  />
+                  <input
+                    type="number"
+                    placeholder="Price"
+                    value={newStoreLink.price === 0 ? '' : newStoreLink.price}
+                    onChange={e => setNewStoreLink((prev: StoreLinkInput) => ({ ...prev, price: parseFloat(e.target.value) || 0 }))}
+                    className={`px-2 py-1 border rounded w-1/4 ${isDark ? 'bg-gray-600 border-gray-500 text-white' : 'bg-white border-gray-300'}`}
+                    disabled={loading}
+                  />
+                  <input
+                    type="url"
+                    placeholder="URL"
+                    value={newStoreLink.url}
+                    onChange={e => setNewStoreLink((prev: StoreLinkInput) => ({ ...prev, url: e.target.value }))}
+                    className={`px-2 py-1 border rounded flex-1 ${isDark ? 'bg-gray-600 border-gray-500 text-white' : 'bg-white border-gray-300'}`}
+                    disabled={loading}
+                  />
+                  <button 
+                    type="button" 
+                    onClick={addStoreLinkAPI} 
+                    disabled={loading || !newStoreLink.store_name || !newStoreLink.url || newStoreLink.price <= 0} 
+                    className="text-blue-500 hover:text-blue-700 p-1 disabled:opacity-50"
+                    title="Add store link"
+                  >
+                    <Plus size={18} />
+                  </button>
+                </div>
+              </>
+            )}
+            
+            {errors.storeLinks && (
+              <p className="mt-1 text-sm text-red-500">{errors.storeLinks}</p>
+            )}
           </div>
 
           {/* Product URL */}
@@ -387,26 +578,56 @@ const EditProductModal: React.FC<EditProductModalProps> = ({
             )}
           </div>
 
-          {/* Image URL */}
+          {/* Product Images */}
           <div>
-            <label className={`block text-sm font-medium mb-2 ${
-              isDark ? 'text-gray-300' : 'text-gray-700'
-            }`}>
-              Image URL
+            <label className={`block text-sm font-medium mb-3 ${isDark ? 'text-gray-300' : 'text-gray-700'}`}>
+              Product Images
             </label>
-            <input
-              type="url"
-              name="image"
-              value={formData.image}
-              onChange={handleInputChange}
-              className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 ${
-                isDark 
-                  ? 'bg-gray-700 border-gray-600 text-white placeholder-gray-400' 
-                  : 'bg-white border-gray-300 text-gray-900 placeholder-gray-500'
-              }`}
-              placeholder="https://example.com/image.jpg"
-              disabled={loading}
+            
+            {/* Existing Images */}
+            {existingImages.length > 0 && (
+              <div className="mb-4">
+                <h4 className={`text-sm font-medium mb-2 ${isDark ? 'text-gray-400' : 'text-gray-600'}`}>
+                  Current Images ({existingImages.length})
+                </h4>
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                  {existingImages.map((img, index) => (
+                    <div key={img.id} className="relative group">
+                      <div className="aspect-square rounded-lg overflow-hidden border-2 border-gray-200 hover:border-blue-400 transition-colors">
+                        <img 
+                          src={img.url} 
+                          alt={`Product image ${index + 1}`}
+                          className="w-full h-full object-cover"
+                          onError={(e) => {
+                            const target = e.target as HTMLImageElement;
+                            target.src = 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjQiIGhlaWdodD0iMjQiIHZpZXdCb3g9IjAgMCAyNCAyNCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPHJlY3Qgd2lkdGg9IjI0IiBoZWlnaHQ9IjI0IiBmaWxsPSIjRjNGNEY2Ii8+CjxwYXRoIGQ9Ik0xMiAxNkM5Ljc5IDEzLjc5IDkuNzkgMTAuMjEgMTIgOEMxNC4yMSAxMC4yMSAxNC4yMSAxMy43OSAxMiAxNloiIGZpbGw9IiM5Q0EzQUYiLz4KPC9zdmc+';
+                          }}
+                        />
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => handleDeleteExistingImage(img.id)}
+                        className="absolute -top-2 -right-2 bg-red-500 hover:bg-red-600 text-white rounded-full p-1.5 opacity-0 group-hover:opacity-100 transition-opacity shadow-lg"
+                        title="Delete image"
+                      >
+                        <Trash2 size={14} />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Upload New Images */}
+            <DragZone
+              onFilesSelected={(files: File[]) => setUploadedImages(files)}
+              acceptedTypes={['image/*']}
+              maxFiles={10}
+              title="Upload Product Images"
+              description="Click to upload or drag and drop"
+              className="mb-4"
             />
+
           </div>
 
           {/* Availability and Status */}

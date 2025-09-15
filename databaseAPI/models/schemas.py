@@ -3,6 +3,7 @@ from typing import Optional, List
 from datetime import datetime
 from decimal import Decimal
 from uuid import UUID
+import re
 
 # User Models
 class UserBase(BaseModel):
@@ -12,6 +13,25 @@ class UserBase(BaseModel):
 
 class UserCreate(UserBase):
     password: str
+    
+    @validator('password')
+    def validate_password(cls, v):
+        if len(v) < 8:
+            raise ValueError('Password must be at least 8 characters long')
+        
+        if not re.search(r'[A-Z]', v):
+            raise ValueError('Password must contain at least one uppercase letter')
+        
+        if not re.search(r'[a-z]', v):
+            raise ValueError('Password must contain at least one lowercase letter')
+        
+        if not re.search(r'\d', v):
+            raise ValueError('Password must contain at least one number')
+        
+        if not re.search(r'[^A-Za-z0-9]', v):
+            raise ValueError('Password must contain at least one special character')
+        
+        return v
 
 class UserUpdate(BaseModel):
     name: Optional[str] = None
@@ -74,11 +94,9 @@ class ProductBase(BaseModel):
     description: Optional[str] = None
     manufacturer: Optional[str] = None
     price: Optional[Decimal] = None
-    original_price: Optional[Decimal] = None
     product_url: Optional[str] = None
     availability: Optional[str] = None
     status: str = "active"
-    image: Optional[str] = None
 
 class ProductCreate(ProductBase):
     category_id: Optional[UUID] = None
@@ -89,11 +107,9 @@ class ProductUpdate(BaseModel):
     category_id: Optional[UUID] = None
     manufacturer: Optional[str] = None
     price: Optional[Decimal] = None
-    original_price: Optional[Decimal] = None
     product_url: Optional[str] = None
     availability: Optional[str] = None
     status: Optional[str] = None
-    image: Optional[str] = None
 
 class ProductResponse(ProductBase):
     id: UUID
@@ -103,6 +119,7 @@ class ProductResponse(ProductBase):
     created_at: datetime
     updated_at: datetime
     category_name: Optional[str] = None
+    display_image: Optional[str] = None  # From products_with_image view
 
     class Config:
         from_attributes = True

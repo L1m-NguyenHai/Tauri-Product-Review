@@ -1,4 +1,7 @@
-const API_BASE_URL = 'http://localhost:8000/api/v1';
+// Dynamic API base URL - gets value from localStorage or defaults
+const getApiBaseUrl = (): string => {
+  return localStorage.getItem('api_base_url') || 'http://localhost:8000/api/v1';
+};
 
 // Types
 interface User {
@@ -32,11 +35,9 @@ interface Product {
   description: string;
   manufacturer: string;
   price: number;
-  original_price?: number;
   product_url: string;
   availability: string;
   status: string;
-  image?: string;
   category_id: string;
   category_name?: string;
   average_rating?: number;
@@ -45,6 +46,7 @@ interface Product {
   updated_at: string;
   features?: ProductFeature[];
   images?: ProductImage[];
+  display_image?: string; // from view products_with_image
   specifications?: ProductSpecification[];
   store_links?: StoreLink[];
 }
@@ -149,13 +151,18 @@ interface ProductInput {
   name: string;
   description: string;
   manufacturer: string;
-  price: number;
-  original_price?: number;
+  price?: number;
   product_url: string;
   availability: string;
   status: string;
-  image?: string;
   category_id: string;
+}
+
+interface StoreLinkInput {
+  store_name: string;
+  price: number;
+  url: string;
+  is_official: boolean;
 }
 
 // API Helper
@@ -167,11 +174,14 @@ const getAuthToken = (): string | null => {
 
 const apiRequest = async (endpoint: string, options: RequestInit = {}): Promise<any> => {
   const token = getAuthToken();
-  const url = `${API_BASE_URL}${endpoint}`;
+  const url = `${getApiBaseUrl()}${endpoint}`;
+  
+  // Check if body is FormData to avoid setting Content-Type
+  const isFormData = options.body instanceof FormData;
   
   const config: RequestInit = {
     headers: {
-      'Content-Type': 'application/json',
+      ...(isFormData ? {} : { 'Content-Type': 'application/json' }),
       ...(token && { Authorization: token }),
       ...options.headers,
     },
@@ -182,6 +192,7 @@ const apiRequest = async (endpoint: string, options: RequestInit = {}): Promise<
     url,
     method: config.method || 'GET',
     hasToken: !!token,
+    isFormData,
     headers: config.headers
   });
 
@@ -507,6 +518,20 @@ export const adminAPI = {
     });
   },
 
+  uploadProductImage: async (productId: string, file: File, isPrimary?: boolean): Promise<ProductImage> => {
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('is_primary', isPrimary ? 'true' : 'false');
+    formData.append('sort_order', '0');
+    
+    return apiRequest(`/products/${productId}/images/upload`, {
+      method: 'POST',
+      body: formData,
+      // Don't set Content-Type, let browser set it for FormData
+      headers: {}
+    });
+  },
+
   deleteProductImage: async (imageId: string): Promise<void> => {
     return apiRequest(`/products/images/${imageId}`, { method: 'DELETE' });
   },
@@ -521,18 +546,6 @@ export const adminAPI = {
 
   deleteProductSpecification: async (specId: string): Promise<void> => {
     return apiRequest(`/products/specifications/${specId}`, { method: 'DELETE' });
-  },
-
-  // Store Links
-  addStoreLink: async (productId: string, linkData: { store_name: string; price: number; url: string; is_official?: boolean }): Promise<StoreLink> => {
-    return apiRequest(`/products/${productId}/store-links`, {
-      method: 'POST',
-      body: JSON.stringify(linkData)
-    });
-  },
-
-  deleteStoreLink: async (linkId: string): Promise<void> => {
-    return apiRequest(`/products/store-links/${linkId}`, { method: 'DELETE' });
   },
 
   // Analytics endpoints
@@ -571,6 +584,41 @@ export const adminAPI = {
     const query = new URLSearchParams();
     if (limit) query.append('limit', limit.toString());
     return apiRequest(`/admin/logs/recent?${query}`);
+  },
+
+  // Store Links Management
+  getProductStoreLinks: async (productId: string): Promise<{ store_links: any[] }> => {
+    return apiRequest(`/admin/products/${productId}/store-links`);
+  },
+
+  addStoreLink: async (productId: string, storeLinkData: {
+    store_name: string;
+    price?: number;
+    url: string;
+    is_official?: boolean;
+  }): Promise<{ message: string; store_link: any }> => {
+    return apiRequest(`/admin/products/${productId}/store-links`, {
+      method: 'POST',
+      body: JSON.stringify(storeLinkData)
+    });
+  },
+
+  updateStoreLink: async (linkId: string, storeLinkData: {
+    store_name: string;
+    price?: number;
+    url: string;
+    is_official?: boolean;
+  }): Promise<{ message: string; store_link: any }> => {
+    return apiRequest(`/admin/store-links/${linkId}`, {
+      method: 'PUT',
+      body: JSON.stringify(storeLinkData)
+    });
+  },
+
+  deleteStoreLink: async (linkId: string): Promise<{ message: string }> => {
+    return apiRequest(`/admin/store-links/${linkId}`, {
+      method: 'DELETE'
+    });
   }
 };
 
@@ -590,7 +638,7 @@ export const userAPI = {
 
   updateUserAvatar: async (formData: FormData): Promise<void> => {
     const token = getAuthToken();
-    const url = `${API_BASE_URL}/users/profile/avatar`;
+    const url = `${getApiBaseUrl()}/users/profile/avatar`;
     
     const config: RequestInit = {
       method: 'POST',
@@ -766,7 +814,7 @@ export const reviewAPI = {
   // Review media
   uploadReviewMedia: async (reviewId: string, formData: FormData): Promise<void> => {
     const token = getAuthToken();
-    const url = `${API_BASE_URL}/reviews/${reviewId}/media/upload`;
+    const url = `${getApiBaseUrl()}/reviews/${reviewId}/media/upload`;
     
     const config: RequestInit = {
       method: 'POST',
@@ -869,5 +917,6 @@ export type {
   ProductFeature,
   ProductImage,
   ProductSpecification,
-  StoreLink
+  StoreLink,
+  StoreLinkInput
 };
