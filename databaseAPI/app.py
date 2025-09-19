@@ -9,7 +9,7 @@ import time
 import logging
 import os
 from database.connection import init_pool, close_pool
-from discord_media import start_discord_bot
+from utils.discord_media import start_discord_bot
 
 # Import all routers
 from routes.auth import router as auth_router
@@ -48,7 +48,7 @@ async def lifespan(app: FastAPI):
         
         # Cleanup Discord resources (if cleanup function exists)
         try:
-            from discord_media import cleanup_discord # type: ignore
+            from utils.discord_media import cleanup_discord # type: ignore
             await cleanup_discord()
             logger.info("Discord resources cleaned up successfully")
         except (ImportError, AttributeError):
