@@ -12,15 +12,89 @@
 
 ---
 
-## 1. Cài đặt dependencies
-Chạy lệnh sau để cài toàn bộ dependencies cho project:
+## 1. Cấu hình môi trường (.env)
+
+### Bước 1: Tạo file .env cho API
+Di chuyển vào thư mục `databaseAPI` và tạo file `.env` từ template:
+```bash
+cd databaseAPI
+cp .env.example .env
+```
+
+### Bước 2: Cấu hình các biến môi trường
+Mở file `.env` và điền các thông tin cần thiết:
+```env
+# Database Configuration
+DB_HOST=localhost
+DB_NAME=LimReview
+DB_USER=postgres
+DB_PASS=your_password_here
+DB_PORT=5432
+DB_TABLE=products
+
+# Discord Configuration (optional)
+DISCORD_BOT_TOKEN=your_discord_bot_token
+DISCORD_GUILD_ID=your_guild_id
+DISCORD_CHANNEL_ID=your_channel_id
+
+# Email Configuration
+SMTP_SERVER=smtp.gmail.com
+SMTP_PORT=587
+SMTP_USERNAME=your_email@gmail.com
+SMTP_PASSWORD=your_app_password
+FROM_EMAIL=your_email@gmail.com
+FROM_NAME=Product Review App
+
+# Frontend URL
+FRONTEND_URL=http://localhost:5173
+```
+
+> **Lưu ý quan trọng:** Không commit file `.env` vào git. File này chứa thông tin nhạy cảm.
+
+---
+
+## 2. Cài đặt dependencies
+
+### Sử dụng pnpm (mặc định)
 ```bash
 pnpm i
 ```
 
+### Sử dụng package manager khác
+
+#### Với npm:
+1. Cài dependencies:
+```bash
+npm install
+```
+2. Cấu hình trong `src-tauri/tauri.conf.json`:
+```json
+{
+  "build": {
+    "beforeDevCommand": "npm run dev",
+    "beforeBuildCommand": "npm run build"
+  }
+}
+```
+
+#### Với yarn:
+1. Cài dependencies:
+```bash
+yarn install
+```
+2. Cấu hình trong `src-tauri/tauri.conf.json`:
+```json
+{
+  "build": {
+    "beforeDevCommand": "yarn dev", 
+    "beforeBuildCommand": "yarn build"
+  }
+}
+```
+
 ---
 
-## 2. Chạy API database
+## 3. Chạy API database
 
 ### Bước 1: Di chuyển vào thư mục API
 ```bash
@@ -40,10 +114,20 @@ python app.py
 
 ---
 
-## 3. Chạy ứng dụng Tauri
-Từ thư mục chính của app, chạy lệnh:
+## 4. Chạy ứng dụng Tauri
+
+### Với pnpm (mặc định):
 ```bash
 pnpm tauri dev
+```
+
+### Với package manager khác:
+```bash
+# Với npm
+npm run tauri dev
+
+# Với yarn  
+yarn tauri dev
 ```
 
 Ứng dụng sẽ khởi động với giao diện Tauri kết nối tới API database vừa bật.
@@ -56,14 +140,15 @@ pnpm tauri dev
   ```bash
   sudo service postgresql status
   ```
-- Đảm bảo user/password/DB name trong `app.py` trùng khớp với config.
+- Đảm bảo thông tin database trong file `.env` trùng khớp với PostgreSQL config.
+- Kiểm tra user/password/DB name trong `.env` có chính xác không.
 
 ### Lỗi 2: Port 5432 bị chiếm dụng
 - Kiểm tra port:
   ```bash
   lsof -i:5432
   ```
-- Dừng tiến trình cũ hoặc đổi port trong `app.py` và `schema.sql`.
+- Dừng tiến trình cũ hoặc đổi port trong file `.env` (DB_PORT).
 
 ### Lỗi 3: Không chạy được `pnpm tauri dev`
 - Kiểm tra đã cài `Rust` và `Cargo`:
@@ -87,7 +172,13 @@ pnpm tauri dev
 - Kiểm tra URL trong code frontend (ví dụ `http://localhost:8000`).  
 - Đảm bảo API (Python) đang chạy trước khi bật Tauri.
 
-### Lỗi 6: Admin Panel trả về 403 Forbidden
+### Lỗi 7: File .env không được đọc
+- Đảm bảo file `.env` nằm trong thư mục `databaseAPI/`
+- Kiểm tra tên file chính xác là `.env` (không có extension khác)
+- Đảm bảo không có khoảng trắng thừa trong các biến môi trường
+- Restart API sau khi thay đổi file `.env`
+
+### Lỗi 9: Admin Panel trả về 403 Forbidden
 - Xem hướng dẫn debug chi tiết: `docs/how-to-debug.md`
 - Login với tài khoản admin: `admin@example.com` / `password`
 - Chạy debug script trong browser console (xem file `debug-quick.js`)
