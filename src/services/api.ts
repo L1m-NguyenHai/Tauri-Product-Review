@@ -31,7 +31,7 @@ export const activityAPI = {
   },
 };
 // Dynamic API base URL - gets value from localStorage or defaults
-const getApiBaseUrl = (): string => {
+export const getApiBaseUrl = (): string => {
   return localStorage.getItem("api_base_url") || "http://localhost:8000/api/v1";
 };
 

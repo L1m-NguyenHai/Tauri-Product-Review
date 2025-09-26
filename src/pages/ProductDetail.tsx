@@ -18,6 +18,7 @@ import {
 import { useTheme } from "../contexts/ThemeContext";
 import { useAuth } from "../contexts/AuthContext";
 import LazyImage from "../components/LazyImage";
+import { getApiBaseUrl } from "../services/api";
 import ConfirmDialog from "../components/ConfirmDialog";
 import ReviewModal from "../components/ReviewModal/ReviewModal";
 import ReviewerBadge from "../components/ReviewerBadge";
@@ -321,7 +322,7 @@ const ProductDetail: React.FC = () => {
       }
 
       const response = await fetch(
-        `http://127.0.0.1:8000/api/v1/reviews/${reviewId}/comments`,
+        `${getApiBaseUrl()}/reviews/${reviewId}/comments`,
         {
           method: "POST",
           headers: {
@@ -363,22 +364,27 @@ const ProductDetail: React.FC = () => {
         // Đóng form reply sau khi gửi thành công
         setReplyingTo(null);
         setReplyContent("");
+        showNotification("success", "💬 Trả lời đã được gửi thành công!");
       } else {
         console.error("Failed to submit reply:", await response.text());
-        alert(
-          "Không thể gửi trả lời. Vui lòng đăng nhập lại hoặc thử lại sau."
+        showNotification(
+          "error",
+          "❌ Không thể gửi trả lời. Vui lòng đăng nhập lại hoặc thử lại sau."
         );
       }
     } catch (error) {
       console.error("Error submitting reply:", error);
-      alert("Đã xảy ra lỗi khi gửi trả lời.");
+      showNotification("error", "❌ Đã xảy ra lỗi khi gửi trả lời.");
     }
   };
 
   const handleHelpfulVote = async (reviewId: string) => {
     if (!user) {
       // Show login prompt if not logged in
-      alert("Vui lòng đăng nhập để đánh giá mức độ hữu ích");
+      showNotification(
+        "warning",
+        "🔐 Vui lòng đăng nhập để đánh giá mức độ hữu ích"
+      );
       return;
     }
 
@@ -387,12 +393,15 @@ const ProductDetail: React.FC = () => {
       const tokenType = localStorage.getItem("token_type");
 
       if (!accessToken || !tokenType) {
-        alert("Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.");
+        showNotification(
+          "error",
+          "⏰ Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại."
+        );
         return;
       }
 
       const response = await fetch(
-        `http://127.0.0.1:8000/api/v1/reviews/${reviewId}/helpful`,
+        `${getApiBaseUrl()}/reviews/${reviewId}/helpful`,
         {
           method: "POST",
           headers: {
@@ -415,14 +424,20 @@ const ProductDetail: React.FC = () => {
               : review
           )
         );
+        showNotification("success", "👍 Đã đánh dấu hữu ích!");
       } else if (response.status === 400) {
         // User already voted, try to remove vote
         await removeHelpfulVote(reviewId);
       } else {
         console.error("Failed to vote helpful");
+        showNotification(
+          "error",
+          "❌ Không thể đánh dấu hữu ích. Vui lòng thử lại."
+        );
       }
     } catch (error) {
       console.error("Error voting helpful:", error);
+      showNotification("error", "❌ Đã xảy ra lỗi. Vui lòng thử lại.");
     }
   };
 
@@ -432,12 +447,15 @@ const ProductDetail: React.FC = () => {
       const tokenType = localStorage.getItem("token_type");
 
       if (!accessToken || !tokenType) {
-        alert("Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.");
+        showNotification(
+          "error",
+          "⏰ Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại."
+        );
         return;
       }
 
       const response = await fetch(
-        `http://127.0.0.1:8000/api/v1/reviews/${reviewId}/helpful`,
+        `${getApiBaseUrl()}/reviews/${reviewId}/helpful`,
         {
           method: "DELETE",
           headers: {
@@ -460,11 +478,17 @@ const ProductDetail: React.FC = () => {
               : review
           )
         );
+        showNotification("info", "👎 Đã bỏ đánh dấu hữu ích!");
       } else {
         console.error("Failed to remove helpful vote");
+        showNotification(
+          "error",
+          "❌ Không thể bỏ đánh dấu. Vui lòng thử lại."
+        );
       }
     } catch (error) {
       console.error("Error removing helpful vote:", error);
+      showNotification("error", "❌ Đã xảy ra lỗi. Vui lòng thử lại.");
     }
   };
 
@@ -488,16 +512,13 @@ const ProductDetail: React.FC = () => {
         return;
       }
 
-      const response = await fetch(
-        `http://127.0.0.1:8000/api/v1/reviews/${reviewId}`,
-        {
-          method: "DELETE",
-          headers: {
-            Authorization: `${tokenType} ${accessToken}`,
-            "Content-Type": "application/json",
-          },
-        }
-      );
+      const response = await fetch(`${getApiBaseUrl()}/reviews/${reviewId}`, {
+        method: "DELETE",
+        headers: {
+          Authorization: `${tokenType} ${accessToken}`,
+          "Content-Type": "application/json",
+        },
+      });
 
       if (response.ok) {
         // Remove the review from the UI
@@ -507,14 +528,20 @@ const ProductDetail: React.FC = () => {
         // Close the dialog
         setConfirmDialog((prev) => ({ ...prev, isOpen: false }));
       } else if (response.status === 401) {
-        alert("Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.");
+        showNotification(
+          "error",
+          "⏰ Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại."
+        );
       } else {
         console.error("Failed to delete review:", await response.text());
-        alert("Không thể xóa đánh giá. Vui lòng thử lại sau.");
+        showNotification(
+          "error",
+          "❌ Không thể xóa đánh giá. Vui lòng thử lại sau."
+        );
       }
     } catch (error) {
       console.error("Error deleting review:", error);
-      alert("Đã xảy ra lỗi khi xóa đánh giá.");
+      showNotification("error", "❌ Đã xảy ra lỗi khi xóa đánh giá.");
     } finally {
       setIsDeleting((prev) => ({ ...prev, [reviewId]: false }));
     }
@@ -536,7 +563,7 @@ const ProductDetail: React.FC = () => {
       }
 
       const response = await fetch(
-        `http://127.0.0.1:8000/api/v1/reviews/comments/${commentId}`,
+        `${getApiBaseUrl()}/reviews/comments/${commentId}`,
         {
           method: "DELETE",
           headers: {
@@ -559,14 +586,20 @@ const ProductDetail: React.FC = () => {
         // Close the dialog
         setConfirmDialog((prev) => ({ ...prev, isOpen: false }));
       } else if (response.status === 401) {
-        alert("Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.");
+        showNotification(
+          "error",
+          "⏰ Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại."
+        );
       } else {
         console.error("Failed to delete comment:", await response.text());
-        alert("Không thể xóa bình luận. Vui lòng thử lại sau.");
+        showNotification(
+          "error",
+          "❌ Không thể xóa bình luận. Vui lòng thử lại sau."
+        );
       }
     } catch (error) {
       console.error("Error deleting comment:", error);
-      alert("Đã xảy ra lỗi khi xóa bình luận.");
+      showNotification("error", "❌ Đã xảy ra lỗi khi xóa bình luận.");
     } finally {
       setIsDeleting((prev) => ({ ...prev, [commentId]: false }));
     }
@@ -640,27 +673,27 @@ const ProductDetail: React.FC = () => {
       const tokenType = localStorage.getItem("token_type");
 
       if (!accessToken || !tokenType) {
-        alert("Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.");
+        showNotification(
+          "error",
+          "⏰ Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại."
+        );
         return;
       }
 
       // First, create the review
-      const reviewResponse = await fetch(
-        "http://127.0.0.1:8000/api/v1/reviews/",
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `${tokenType} ${accessToken}`,
-          },
-          body: JSON.stringify({
-            product_id: reviewData.productId,
-            rating: reviewData.rating,
-            title: reviewData.title,
-            content: reviewData.content,
-          }),
-        }
-      );
+      const reviewResponse = await fetch(`${getApiBaseUrl()}/reviews/`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `${tokenType} ${accessToken}`,
+        },
+        body: JSON.stringify({
+          product_id: reviewData.productId,
+          rating: reviewData.rating,
+          title: reviewData.title,
+          content: reviewData.content,
+        }),
+      });
 
       if (!reviewResponse.ok) {
         const errorData = await reviewResponse.text();
@@ -676,7 +709,7 @@ const ProductDetail: React.FC = () => {
           const pro = reviewData.pros[i];
           if (pro.trim()) {
             const proResponse = await fetch(
-              `http://127.0.0.1:8000/api/v1/reviews/${newReview.id}/pros`,
+              `${getApiBaseUrl()}/reviews/${newReview.id}/pros`,
               {
                 method: "POST",
                 headers: {
@@ -703,7 +736,7 @@ const ProductDetail: React.FC = () => {
           const con = reviewData.cons[i];
           if (con.trim()) {
             const conResponse = await fetch(
-              `http://127.0.0.1:8000/api/v1/reviews/${newReview.id}/cons`,
+              `${getApiBaseUrl()}/reviews/${newReview.id}/cons`,
               {
                 method: "POST",
                 headers: {
@@ -734,7 +767,7 @@ const ProductDetail: React.FC = () => {
           formData.append("sort_order", i.toString());
 
           const mediaResponse = await fetch(
-            `http://127.0.0.1:8000/api/v1/reviews/${newReview.id}/media/upload`,
+            `${getApiBaseUrl()}/reviews/${newReview.id}/media/upload`,
             {
               method: "POST",
               headers: {
@@ -755,7 +788,7 @@ const ProductDetail: React.FC = () => {
 
       // Refresh reviews to show the new one
       const refreshResponse = await fetch(
-        `http://127.0.0.1:8000/api/v1/reviews/?product_id=${id}`
+        `${getApiBaseUrl()}/reviews/?product_id=${id}`
       );
       if (refreshResponse.ok) {
         const refreshedReviewsList = await refreshResponse.json();
@@ -765,7 +798,7 @@ const ProductDetail: React.FC = () => {
             refreshedReviewsList.map(async (review: any) => {
               try {
                 const detailResponse = await fetch(
-                  `http://127.0.0.1:8000/api/v1/reviews/${review.id}`
+                  `${getApiBaseUrl()}/reviews/${review.id}`
                 );
                 if (detailResponse.ok) {
                   return await detailResponse.json();
@@ -787,13 +820,22 @@ const ProductDetail: React.FC = () => {
 
       // Different messages based on user role
       if (user?.role === "reviewer") {
-        alert("Đánh giá đã được gửi và tự động xuất bản thành công!");
+        showNotification(
+          "success",
+          "🎉 Đánh giá đã được gửi và tự động xuất bản thành công!"
+        );
       } else {
-        alert("Đánh giá đã được gửi thành công và đang chờ admin duyệt!");
+        showNotification(
+          "success",
+          "✅ Đánh giá đã được gửi thành công và đang chờ admin duyệt!"
+        );
       }
     } catch (error) {
       console.error("Error submitting review:", error);
-      alert("Đã xảy ra lỗi khi gửi đánh giá. Vui lòng thử lại sau.");
+      showNotification(
+        "error",
+        "❌ Đã xảy ra lỗi khi gửi đánh giá. Vui lòng thử lại sau."
+      );
     }
   };
 
