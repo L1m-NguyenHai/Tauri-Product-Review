@@ -1,11 +1,9 @@
-import React, { useState, useEffect, useMemo, useCallback } from "react";
+import React, { useState, useEffect } from "react";
 import { Link } from "react-router-dom";
 import { Star, TrendingUp, Users, Award } from "lucide-react";
 import { useTheme } from "../contexts/ThemeContext";
 import ProductCard from "../components/ProductCard";
-import LoadingSpinner from "../components/LoadingSpinner";
 import { publicAPI } from "../services/api";
-import { PerformanceMonitor } from "../utils/performance";
 
 const Home: React.FC = () => {
   const { isDark } = useTheme();

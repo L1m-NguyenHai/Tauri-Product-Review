@@ -1,5 +1,5 @@
 import React, { useMemo } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link } from "react-router-dom";
 import { useAuth } from "../contexts/AuthContext";
 import { activityAPI } from "../services/api";
 import { useTheme } from "../contexts/ThemeContext";
@@ -46,7 +46,6 @@ const ProductCard: React.FC<ProductCardProps> = React.memo(
   }) => {
     const { isDark } = useTheme();
     const { user } = useAuth();
-    const navigate = useNavigate();
 
     // Memoize expensive calculations
     const formattedPrice = useMemo(
@@ -63,9 +62,7 @@ const ProductCard: React.FC<ProductCardProps> = React.memo(
       [product.images, product.display_image]
     );
 
-    const handleClick = async (
-      e: React.MouseEvent<HTMLAnchorElement, MouseEvent>
-    ) => {
+    const handleClick = async () => {
       // Log activity if user is logged in
       if (user) {
         try {
