@@ -21,6 +21,9 @@ from routes.review_requests import router as review_requests_router
 from routes.contact import router as contact_router
 from routes.admin import router as admin_router
 
+from routes.email_verification import email_verification_router
+from routes.activity import router as activity_router
+
 from contextlib import asynccontextmanager
 
 # Configure logging
@@ -56,7 +59,7 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.error(f"Error during shutdown: {e}")
 
-# Create FastAPI app with comprehensive metadata
+    # ...existing code...
 app = FastAPI(
     title="Product Review API",
     description="""
@@ -94,17 +97,11 @@ app = FastAPI(
     lifespan=lifespan
 )
 
-# CORS Middleware - Configure for your frontend domains
+app.include_router(activity_router, prefix="/api/v1")
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:3000",  # React development server
-        "http://localhost:5173",  # Vite development server
-        "http://localhost:8080",  # Vue development server
-        "http://127.0.0.1:5173",  # Vite with 127.0.0.1
-        "https://yourdomain.com",  # Production frontend
-    ],
-    allow_credentials=True,
+    allow_origins=["*"],  # Allow all origins
+    allow_credentials=False,  # Must be False when using allow_origins=["*"]
     allow_methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
     allow_headers=[
         "Accept",
@@ -118,11 +115,11 @@ app.add_middleware(
     expose_headers=["*"],
 )
 
-# Trusted Host Middleware (optional, for production)
-app.add_middleware(
-    TrustedHostMiddleware,
-    allowed_hosts=["localhost", "127.0.0.1", "yourdomain.com"]
-)
+# Trusted Host Middleware - Allow all hosts for development/testing
+# app.add_middleware(
+#     TrustedHostMiddleware,
+#     allowed_hosts=["*"]  # Allow all hosts
+# )
 
 # Custom middleware for request logging and timing
 @app.middleware("http")
@@ -227,6 +224,9 @@ async def get_version():
             "analytics"
         ]
     }
+
+# Include email verification router without prefix for email links
+app.include_router(email_verification_router)
 
 # Include all routers with appropriate prefixes and tags
 app.include_router(auth_router, prefix="/api/v1")

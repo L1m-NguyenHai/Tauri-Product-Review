@@ -14,10 +14,10 @@ SMTP_PORT = int(os.getenv("SMTP_PORT", "587"))
 SMTP_USERNAME = os.getenv("SMTP_USERNAME", "nhailtvop@gmail.com")
 SMTP_PASSWORD = os.getenv("SMTP_PASSWORD", "urpf chej lrnk ylzv")
 FROM_EMAIL = os.getenv("FROM_EMAIL", SMTP_USERNAME)
-FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:5173")
+API_BASE_URL = os.getenv("API_BASE_URL", "http://localhost:8000")  # API base URL for verification links
 
 # Log configuration for debugging
-logger.info(f"Email config loaded - SMTP_SERVER: {SMTP_SERVER}, SMTP_PORT: {SMTP_PORT}, FROM_EMAIL: {FROM_EMAIL}")
+logger.info(f"Email config loaded - SMTP_SERVER: {SMTP_SERVER}, SMTP_PORT: {SMTP_PORT}, FROM_EMAIL: {FROM_EMAIL}, API_BASE_URL: {API_BASE_URL}")
 
 def generate_verification_token() -> str:
     """Generate a secure verification token"""
@@ -32,8 +32,8 @@ def send_verification_email(email: str, token: str, name: str) -> bool:
     try:
         logger.info(f"Attempting to send verification email to {email}")
         
-        # Create verification URL
-        verification_url = f"{FRONTEND_URL}/verify-email?token={token}"
+        # Create verification URL pointing to API endpoint
+        verification_url = f"{API_BASE_URL}/auth/verify-email?token={token}"
         logger.info(f"Verification URL: {verification_url}")
         
         # Create email content
@@ -41,22 +41,30 @@ def send_verification_email(email: str, token: str, name: str) -> bool:
         
         html_body = f"""
         <html>
-        <body>
-            <h2>Welcome to Product Review App!</h2>
-            <p>Hi {name},</p>
-            <p>Thank you for registering with us. Please click the link below to verify your email address:</p>
-            <p>
-                <a href="{verification_url}" 
-                   style="background-color: #007bff; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px;">
-                   Verify Email Address
-                </a>
-            </p>
-            <p>Or copy and paste this URL into your browser:</p>
-            <p>{verification_url}</p>
-            <p>This link will expire in 24 hours.</p>
-            <p>If you didn't create this account, you can safely ignore this email.</p>
-            <br>
-            <p>Best regards,<br>Product Review Team</p>
+        <body style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+            <div style="text-align: center; border-bottom: 1px solid #eee; padding-bottom: 20px;">
+                <h2 style="color: #333;">Welcome to Product Review App!</h2>
+            </div>
+            <div style="padding: 20px 0;">
+                <p>Hi {name},</p>
+                <p>Thank you for registering with us. Please click the button below to verify your email address and activate your account:</p>
+                <div style="text-align: center; margin: 30px 0;">
+                    <a href="{verification_url}" 
+                       style="background-color: #007bff; color: white; padding: 12px 30px; text-decoration: none; border-radius: 5px; display: inline-block; font-weight: bold;">
+                       ✅ Verify Email Address
+                    </a>
+                </div>
+                <p style="color: #666; font-size: 14px;">Or copy and paste this URL into your browser:</p>
+                <p style="background-color: #f8f9fa; padding: 10px; border-radius: 4px; word-break: break-all; font-family: monospace; font-size: 12px;">{verification_url}</p>
+                <div style="background-color: #fff3cd; border: 1px solid #ffeaa7; border-radius: 4px; padding: 10px; margin: 20px 0;">
+                    <p style="margin: 0; color: #856404; font-size: 14px;">⏰ <strong>Important:</strong> This verification link will expire in 24 hours.</p>
+                </div>
+                <p style="color: #666; font-size: 14px;">If you didn't create this account, you can safely ignore this email.</p>
+            </div>
+            <div style="border-top: 1px solid #eee; padding-top: 20px; text-align: center; color: #666; font-size: 14px;">
+                <p>Best regards,<br><strong>Product Review Team</strong></p>
+                <p>🚀 <a href="{API_BASE_URL}/docs" style="color: #007bff;">Explore our API Documentation</a></p>
+            </div>
         </body>
         </html>
         """
@@ -66,16 +74,18 @@ def send_verification_email(email: str, token: str, name: str) -> bool:
         
         Hi {name},
         
-        Thank you for registering with us. Please visit the following link to verify your email address:
+        Thank you for registering with us. Please visit the following link to verify your email address and activate your account:
         
         {verification_url}
         
-        This link will expire in 24 hours.
+        ⏰ IMPORTANT: This verification link will expire in 24 hours.
         
         If you didn't create this account, you can safely ignore this email.
         
         Best regards,
         Product Review Team
+        
+        🚀 Explore our API: {API_BASE_URL}/docs
         """
         
         # Create message
@@ -137,7 +147,7 @@ def send_welcome_email(email: str, name: str) -> bool:
                 <li>Request product reviews</li>
                 <li>Interact with other reviewers</li>
             </ul>
-            <p>Start exploring now at: <a href="{FRONTEND_URL}">{FRONTEND_URL}</a></p>
+            <p>Start exploring now by accessing the API at: <a href="{API_BASE_URL}/docs">{API_BASE_URL}/docs</a></p>
             <br>
             <p>Happy reviewing!<br>Product Review Team</p>
         </body>

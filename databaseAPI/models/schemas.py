@@ -1,3 +1,25 @@
+
+from pydantic import BaseModel, EmailStr, validator
+from typing import Optional, List, Any
+from datetime import datetime
+from uuid import UUID
+
+# User Activity Models
+
+class UserActivityBase(BaseModel):
+    user_id: UUID
+    activity_type: str
+    activity_data: Optional[Any] = None
+
+class UserActivityCreate(UserActivityBase):
+    pass
+
+class UserActivityResponse(UserActivityBase):
+    id: UUID
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
 from pydantic import BaseModel, EmailStr, validator
 from typing import Optional, List
 from datetime import datetime

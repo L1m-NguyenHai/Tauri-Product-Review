@@ -1,20 +1,20 @@
-import React, { useState, useEffect } from 'react';
-import { NavLink, Link, useLocation } from 'react-router-dom';
-import { 
-  Home, 
-  Package, 
-  User, 
-  Settings, 
-  Info, 
+import React, { useState, useEffect } from "react";
+import { NavLink, Link, useLocation } from "react-router-dom";
+import {
+  Home,
+  Package,
+  User,
+  Settings,
+  Info,
   Phone,
   PlusCircle,
   Search,
   Grid,
-  List
-} from 'lucide-react';
-import { publicAPI } from '../../services/api';
-import { useTheme } from '../../contexts/ThemeContext';
-import { useAuth } from '../../contexts/AuthContext';
+  List,
+} from "lucide-react";
+import { publicAPI } from "../../services/api";
+import { useTheme } from "../../contexts/ThemeContext";
+import { useAuth } from "../../contexts/AuthContext";
 
 interface SidebarProps {
   isOpen: boolean;
@@ -25,8 +25,8 @@ interface SidebarProps {
     setSelectedCategory: (category: string) => void;
     sortBy: string;
     setSortBy: (sort: string) => void;
-    viewMode: 'grid' | 'list';
-    setViewMode: (mode: 'grid' | 'list') => void;
+    viewMode: "grid" | "list";
+    setViewMode: (mode: "grid" | "list") => void;
   };
 }
 
@@ -34,9 +34,9 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, productFilters }) => {
   const { isDark } = useTheme();
   const { user, isAdmin } = useAuth();
   const location = useLocation();
-  const isProductsPage = location.pathname === '/products';
-  const [categories, setCategories] = useState<{id: string, name: string}[]>([
-    {id: 'all', name: 'All Categories'}
+  const isProductsPage = location.pathname === "/products";
+  const [categories, setCategories] = useState<{ id: string; name: string }[]>([
+    { id: "all", name: "All Categories" },
   ]);
 
   useEffect(() => {
@@ -45,15 +45,15 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, productFilters }) => {
         const response = await publicAPI.getCategories();
         if (response && Array.isArray(response)) {
           setCategories([
-            {id: 'all', name: 'All Categories'},
+            { id: "all", name: "All Categories" },
             ...response.map((category: any) => ({
               id: category.id,
-              name: category.name
-            }))
+              name: category.name,
+            })),
           ]);
         }
       } catch (error) {
-        console.error('Error fetching categories:', error);
+        console.error("Error fetching categories:", error);
       }
     };
 
@@ -61,32 +61,40 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, productFilters }) => {
   }, []);
 
   const navItems = [
-    { to: '/', icon: Home, label: 'Home' },
-    { to: '/products', icon: Package, label: 'Products' },
-    ...(user ? [
-      { to: '/request-review', icon: PlusCircle, label: 'Request Review' },
-      { to: '/profile', icon: User, label: 'Profile' },
-    ] : []),
+    { to: "/", icon: Home, label: "Home" },
+    { to: "/products", icon: Package, label: "Products" },
+    ...(user
+      ? [
+          { to: "/request-review", icon: PlusCircle, label: "Request Review" },
+          { to: "/profile", icon: User, label: "Profile" },
+        ]
+      : []),
   ];
 
-  const adminItems = [
-    { to: '/admin', icon: Settings, label: 'Admin Panel' },
-  ];
+  const adminItems = [{ to: "/admin", icon: Settings, label: "Admin Panel" }];
 
   const footerItems = [
-    { to: '/about', icon: Info, label: 'About' },
-    { to: '/contact', icon: Phone, label: 'Contact' },
+    { to: "/about", icon: Info, label: "About" },
+    { to: "/contact", icon: Phone, label: "Contact" },
   ];
-  const NavItem = ({ to, icon: Icon, label }: { to: string; icon: any; label: string }) => (
+  const NavItem = ({
+    to,
+    icon: Icon,
+    label,
+  }: {
+    to: string;
+    icon: any;
+    label: string;
+  }) => (
     <NavLink
       to={to}
       className={({ isActive }) =>
         `flex items-center gap-3 px-3 py-2 rounded-lg transition-colors ${
           isActive
-            ? 'bg-blue-500 text-white'
+            ? "bg-blue-500 text-white"
             : isDark
-            ? 'text-gray-300 hover:bg-gray-700 hover:text-white'
-            : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900'
+            ? "text-gray-300 hover:bg-gray-700 hover:text-white"
+            : "text-gray-600 hover:bg-gray-100 hover:text-gray-900"
         }`
       }
     >
@@ -96,29 +104,42 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, productFilters }) => {
   );
 
   return (
-    <aside className={`fixed left-0 top-16 h-[calc(100vh-4rem)] w-64 transition-transform duration-300 ${
-      isOpen ? 'translate-x-0' : '-translate-x-full'
-    } ${isDark ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'} border-r z-40`}>
+    <aside
+      className={`fixed left-0 top-16 h-[calc(100vh-4rem)] w-64 transition-transform duration-300 ${
+        isOpen ? "translate-x-0" : "-translate-x-full"
+      } ${
+        isDark ? "bg-gray-800 border-gray-700" : "bg-white border-gray-200"
+      } border-r z-40`}
+    >
       <nav className="flex flex-col h-full p-4">
         <div className="space-y-2">
           {navItems.map((item) => (
             <NavItem key={item.to} {...item} />
           ))}
-          
+
           {/* Show auth prompt for non-authenticated users */}
           {!user && (
-            <div className={`mt-6 p-4 rounded-lg border ${
-              isDark ? 'border-gray-700 bg-gray-700' : 'border-orange-200 bg-orange-50'
-            }`}>
-              <p className={`text-sm font-medium mb-2 ${
-                isDark ? 'text-white' : 'text-orange-900'
-              }`}>
+            <div
+              className={`mt-6 p-4 rounded-lg border ${
+                isDark
+                  ? "border-gray-700 bg-gray-700"
+                  : "border-orange-200 bg-orange-50"
+              }`}
+            >
+              <p
+                className={`text-sm font-medium mb-2 ${
+                  isDark ? "text-white" : "text-orange-900"
+                }`}
+              >
                 Get Full Access
               </p>
-              <p className={`text-xs mb-3 ${
-                isDark ? 'text-gray-300' : 'text-orange-700'
-              }`}>
-                Sign in to write reviews, request products, and access your profile.
+              <p
+                className={`text-xs mb-3 ${
+                  isDark ? "text-gray-300" : "text-orange-700"
+                }`}
+              >
+                Sign in to write reviews, request products, and access your
+                profile.
               </p>
               <div className="flex gap-2">
                 <Link
@@ -130,9 +151,9 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, productFilters }) => {
                 <Link
                   to="/register"
                   className={`flex-1 text-center px-3 py-2 text-xs font-medium rounded-lg transition-colors ${
-                    isDark 
-                      ? 'bg-gray-600 hover:bg-gray-500 text-white' 
-                      : 'bg-white hover:bg-gray-50 text-orange-600 border border-orange-200'
+                    isDark
+                      ? "bg-gray-600 hover:bg-gray-500 text-white"
+                      : "bg-white hover:bg-gray-50 text-orange-600 border border-orange-200"
                   }`}
                 >
                   Sign Up
@@ -145,17 +166,21 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, productFilters }) => {
         {/* Product Filters Section */}
         {isProductsPage && productFilters && (
           <div className="mt-8 pt-6 border-t border-gray-200 dark:border-gray-700">
-            <h3 className={`text-sm font-semibold mb-4 ${
-              isDark ? 'text-white' : 'text-gray-900'
-            }`}>
+            <h3
+              className={`text-sm font-semibold mb-4 ${
+                isDark ? "text-white" : "text-gray-900"
+              }`}
+            >
               Filters & Search
             </h3>
-            
+
             {/* Search */}
             <div className="mb-4">
-              <label className={`block text-xs font-medium mb-2 ${
-                isDark ? 'text-gray-300' : 'text-gray-700'
-              }`}>
+              <label
+                className={`block text-xs font-medium mb-2 ${
+                  isDark ? "text-gray-300" : "text-gray-700"
+                }`}
+              >
                 Search Products
               </label>
               <div className="relative">
@@ -164,11 +189,13 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, productFilters }) => {
                   type="text"
                   placeholder="Search..."
                   value={productFilters.searchQuery}
-                  onChange={(e) => productFilters.setSearchQuery(e.target.value)}
+                  onChange={(e) =>
+                    productFilters.setSearchQuery(e.target.value)
+                  }
                   className={`w-full pl-9 pr-3 py-2 text-sm rounded-lg border-0 ${
-                    isDark 
-                      ? 'bg-gray-700 text-white placeholder-gray-400' 
-                      : 'bg-gray-100 text-gray-900'
+                    isDark
+                      ? "bg-gray-700 text-white placeholder-gray-400"
+                      : "bg-gray-100 text-gray-900"
                   } focus:ring-2 focus:ring-orange-500 focus:outline-none`}
                 />
               </div>
@@ -176,21 +203,25 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, productFilters }) => {
 
             {/* Category Filter */}
             <div className="mb-4">
-              <label className={`block text-xs font-medium mb-2 ${
-                isDark ? 'text-gray-300' : 'text-gray-700'
-              }`}>
+              <label
+                className={`block text-xs font-medium mb-2 ${
+                  isDark ? "text-gray-300" : "text-gray-700"
+                }`}
+              >
                 Category
               </label>
               <select
                 value={productFilters.selectedCategory}
-                onChange={(e) => productFilters.setSelectedCategory(e.target.value)}
+                onChange={(e) =>
+                  productFilters.setSelectedCategory(e.target.value)
+                }
                 className={`w-full px-3 py-2 text-sm rounded-lg border-0 ${
-                  isDark 
-                    ? 'bg-gray-700 text-white' 
-                    : 'bg-gray-100 text-gray-900'
+                  isDark
+                    ? "bg-gray-700 text-white"
+                    : "bg-gray-100 text-gray-900"
                 } focus:ring-2 focus:ring-orange-500 focus:outline-none`}
               >
-                {categories.map(category => (
+                {categories.map((category) => (
                   <option key={category.id} value={category.id}>
                     {category.name}
                   </option>
@@ -200,20 +231,23 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, productFilters }) => {
 
             {/* Sort By */}
             <div className="mb-4">
-              <label className={`block text-xs font-medium mb-2 ${
-                isDark ? 'text-gray-300' : 'text-gray-700'
-              }`}>
+              <label
+                className={`block text-xs font-medium mb-2 ${
+                  isDark ? "text-gray-300" : "text-gray-700"
+                }`}
+              >
                 Sort By
               </label>
               <select
                 value={productFilters.sortBy}
                 onChange={(e) => productFilters.setSortBy(e.target.value)}
                 className={`w-full px-3 py-2 text-sm rounded-lg border-0 ${
-                  isDark 
-                    ? 'bg-gray-700 text-white' 
-                    : 'bg-gray-100 text-gray-900'
+                  isDark
+                    ? "bg-gray-700 text-white"
+                    : "bg-gray-100 text-gray-900"
                 } focus:ring-2 focus:ring-orange-500 focus:outline-none`}
               >
+                <option value="created_at">Sort by Newest</option>
                 <option value="average_rating">Sort by Rating</option>
                 <option value="price">Sort by Price</option>
                 <option value="review_count">Sort by Reviews</option>
@@ -223,28 +257,34 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, productFilters }) => {
 
             {/* View Mode */}
             <div className="mb-4">
-              <label className={`block text-xs font-medium mb-2 ${
-                isDark ? 'text-gray-300' : 'text-gray-700'
-              }`}>
+              <label
+                className={`block text-xs font-medium mb-2 ${
+                  isDark ? "text-gray-300" : "text-gray-700"
+                }`}
+              >
                 View Mode
               </label>
               <div className="flex rounded-lg overflow-hidden bg-gray-100 dark:bg-gray-700">
                 <button
-                  onClick={() => productFilters.setViewMode('grid')}
+                  onClick={() => productFilters.setViewMode("grid")}
                   className={`flex-1 p-2 text-sm ${
-                    productFilters.viewMode === 'grid'
-                      ? 'bg-orange-500 text-white'
-                      : isDark ? 'text-gray-300' : 'text-gray-600'
+                    productFilters.viewMode === "grid"
+                      ? "bg-orange-500 text-white"
+                      : isDark
+                      ? "text-gray-300"
+                      : "text-gray-600"
                   }`}
                 >
                   <Grid className="w-4 h-4 mx-auto" />
                 </button>
                 <button
-                  onClick={() => productFilters.setViewMode('list')}
+                  onClick={() => productFilters.setViewMode("list")}
                   className={`flex-1 p-2 text-sm ${
-                    productFilters.viewMode === 'list'
-                      ? 'bg-orange-500 text-white'
-                      : isDark ? 'text-gray-300' : 'text-gray-600'
+                    productFilters.viewMode === "list"
+                      ? "bg-orange-500 text-white"
+                      : isDark
+                      ? "text-gray-300"
+                      : "text-gray-600"
                   }`}
                 >
                   <List className="w-4 h-4 mx-auto" />

@@ -1,4 +1,5 @@
 from fastapi import APIRouter, HTTPException, status, Depends
+from fastapi.responses import HTMLResponse
 from fastapi.security import HTTPAuthorizationCredentials
 from datetime import timedelta, datetime
 from models.schemas import (
@@ -303,8 +304,43 @@ def send_verification(request: EmailVerificationRequest):
     finally:
         put_conn(conn)
 
+@router.get("/verify-email", response_class=HTMLResponse)
+def verify_email_get(token: str):
+    """
+    Verify user email with token via GET request (for clickable links)
+    Returns HTML response
+    """
+    try:
+        # Use the same logic as POST endpoint
+        request = EmailVerificationConfirm(token=token)
+        result = verify_email_post(request)
+        
+        # Return success HTML
+        return """
+        <html>
+        <head><title>Email Verification</title></head>
+        <body style="font-family: Arial, sans-serif; text-align: center; padding: 50px;">
+            <h2 style="color: green;">✅ Email Verified Successfully!</h2>
+            <p>Your email has been verified. You can now use all features of the Product Review API.</p>
+            <p><a href="/docs" style="color: #007bff;">View API Documentation</a></p>
+        </body>
+        </html>
+        """
+    except HTTPException as e:
+        # Return error HTML
+        return f"""
+        <html>
+        <head><title>Email Verification</title></head>
+        <body style="font-family: Arial, sans-serif; text-align: center; padding: 50px;">
+            <h2 style="color: red;">❌ Verification Failed</h2>
+            <p>{e.detail}</p>
+            <p><a href="/docs" style="color: #007bff;">Go to API Documentation</a></p>
+        </body>
+        </html>
+        """
+
 @router.post("/verify-email")
-def verify_email(request: EmailVerificationConfirm):
+def verify_email_post(request: EmailVerificationConfirm):
     """
     Verify user email with token
     """

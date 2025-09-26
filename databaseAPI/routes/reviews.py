@@ -450,7 +450,7 @@ def add_review_media(
     current_user: dict = Depends(get_current_user)
 ):
     """Add media to review (JSON with media_url)"""
-    from discord_media import discord_client
+    from utils.discord_media import discord_client
     import re
     conn = get_conn()
     try:
@@ -555,7 +555,7 @@ async def upload_review_media(
                 
                 # Try Discord upload first
                 try:
-                    from discord_media import upload_media_to_discord
+                    from utils.discord_media import upload_media_to_discord
                     logger.info("Attempting Discord upload...")
                     media_url = await upload_media_to_discord(temp_file_path)
                     logger.info(f"Discord upload successful, URL: {media_url}")

@@ -469,7 +469,7 @@ async def upload_product_image(
                 
                 # Try Discord upload first
                 try:
-                    from discord_media import upload_media_to_discord
+                    from utils.discord_media import upload_media_to_discord
                     logger.info("Attempting Discord upload for product image...")
                     image_url = await upload_media_to_discord(temp_file_path)
                     logger.info(f"Discord upload successful for product image, URL: {image_url}")

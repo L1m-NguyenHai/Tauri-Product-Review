@@ -33,3 +33,8 @@ databaseAPI/auth/__pycache__/
 databaseAPI/database/__pycache__/
 databaseAPI/models/__pycache__/
 databaseAPI/routes/__pycache__/
+databaseAPI/utils/__pycache__/
+
+# Ignore uploads directory (runtime files)
+databaseAPI/uploads/
+uploads/

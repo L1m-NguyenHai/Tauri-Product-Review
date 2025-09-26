@@ -699,13 +699,14 @@ def delete_product(
     try:
         with conn.cursor(cursor_factory=RealDictCursor) as cur:
             # Check if product exists
-            cur.execute("SELECT id, name FROM products WHERE id = %s", (product_id,))
+            cur.execute("SELECT id, name, product_url FROM products WHERE id = %s", (product_id,))
             product = cur.fetchone()
             if not product:
                 raise HTTPException(
                     status_code=status.HTTP_404_NOT_FOUND,
                     detail="Product not found"
                 )
+            product_url = product.get("product_url")
             
             # Delete in order to avoid foreign key constraints
             # 1. Delete review comments first
@@ -763,8 +764,9 @@ def delete_product(
             # 10. Delete store links
             cur.execute("DELETE FROM store_links WHERE product_id = %s", (product_id,))
             
-            # 11. Delete review requests
-            cur.execute("DELETE FROM review_requests WHERE product_id = %s", (product_id,))
+            # 11. Delete review requests (by product_url)
+            if product_url:
+                cur.execute("DELETE FROM review_requests WHERE product_url = %s", (product_url,))
             
             # 12. Finally delete the product
             cur.execute("DELETE FROM products WHERE id = %s", (product_id,))

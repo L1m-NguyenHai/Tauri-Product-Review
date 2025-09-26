@@ -1,9 +1,15 @@
-import React, { useState, useEffect } from 'react';
-import { X, Package, Loader2, Save, Plus, Trash2 } from 'lucide-react';
-import { useTheme } from '../contexts/ThemeContext';
-import { adminAPI, type Category, type ProductInput, type Product, type StoreLinkInput } from '../services/api';
-import { useNotification } from './Notification';
-import DragZone from './DragZone/DragZone';
+import React, { useState, useEffect } from "react";
+import { X, Package, Loader2, Save, Plus, Trash2 } from "lucide-react";
+import { useTheme } from "../contexts/ThemeContext";
+import {
+  adminAPI,
+  type Category,
+  type ProductInput,
+  type Product,
+  type StoreLinkInput,
+} from "../services/api";
+import { useNotification } from "./Notification";
+import DragZone from "./DragZone/DragZone";
 
 interface EditProductModalProps {
   isOpen: boolean;
@@ -20,7 +26,7 @@ const EditProductModal: React.FC<EditProductModalProps> = ({
   isOpen,
   onClose,
   onProductUpdated,
-  product
+  product,
 }) => {
   const { isDark } = useTheme();
   const { showNotification } = useNotification();
@@ -30,23 +36,25 @@ const EditProductModal: React.FC<EditProductModalProps> = ({
   const [storeLinks, setStoreLinks] = useState<ExtendedStoreLinkInput[]>([]);
   const [loadingStoreLinks, setLoadingStoreLinks] = useState(false);
   const [uploadedImages, setUploadedImages] = useState<File[]>([]);
-  const [existingImages, setExistingImages] = useState<{id: string, url: string}[]>([]);
+  const [existingImages, setExistingImages] = useState<
+    { id: string; url: string }[]
+  >([]);
 
   const [formData, setFormData] = useState<ProductInput>({
-    name: '',
-    description: '',
-    manufacturer: '',
-    product_url: '',
-    availability: 'Available',
-    status: 'active',
-    category_id: ''
+    name: "",
+    description: "",
+    manufacturer: "",
+    product_url: "",
+    availability: "Available",
+    status: "active",
+    category_id: "",
   });
 
   const [newStoreLink, setNewStoreLink] = useState<StoreLinkInput>({
-    store_name: '',
-    url: '',
+    store_name: "",
+    url: "",
     price: 0,
-    is_official: false
+    is_official: false,
   });
 
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -64,24 +72,28 @@ const EditProductModal: React.FC<EditProductModalProps> = ({
         product_url: product.product_url,
         availability: product.availability,
         status: product.status,
-        category_id: product.category_id
+        category_id: product.category_id,
       });
       setUploadedImages([]);
       // Load existing images
       if (product.images && Array.isArray(product.images)) {
-        const formattedImages = product.images.map(img => {
-          // Handle both object and string formats
-          if (typeof img === 'object' && img.image_url) {
-            return { id: img.id, url: img.image_url };
-          } else if (typeof img === 'string') {
-            return { id: `temp-${Date.now()}-${Math.random()}`, url: img };
-          }
-          return null;
-        }).filter((img): img is {id: string, url: string} => img !== null);
+        const formattedImages = product.images
+          .map((img) => {
+            // Handle both object and string formats
+            if (typeof img === "object" && img.image_url) {
+              return { id: img.id, url: img.image_url };
+            } else if (typeof img === "string") {
+              return { id: `temp-${Date.now()}-${Math.random()}`, url: img };
+            }
+            return null;
+          })
+          .filter((img): img is { id: string; url: string } => img !== null);
         setExistingImages(formattedImages);
       } else if (product.display_image) {
         // Fallback to display_image if images array is not available
-        setExistingImages([{ id: `display-${Date.now()}`, url: product.display_image }]);
+        setExistingImages([
+          { id: `display-${Date.now()}`, url: product.display_image },
+        ]);
       } else {
         setExistingImages([]);
       }
@@ -94,8 +106,8 @@ const EditProductModal: React.FC<EditProductModalProps> = ({
       const categoriesData = await adminAPI.getAllCategories();
       setCategories(categoriesData);
     } catch (error) {
-      console.error('Failed to load categories:', error);
-      showNotification('error', 'Failed to load categories');
+      console.error("Failed to load categories:", error);
+      showNotification("error", "Failed to load categories");
     } finally {
       setLoadingCategories(false);
     }
@@ -103,14 +115,16 @@ const EditProductModal: React.FC<EditProductModalProps> = ({
 
   const loadStoreLinks = async () => {
     if (!product) return;
-    
+
     setLoadingStoreLinks(true);
     try {
-      const response = await adminAPI.getProductStoreLinks(product.id.toString());
+      const response = await adminAPI.getProductStoreLinks(
+        product.id.toString()
+      );
       setStoreLinks(response.store_links || []);
     } catch (error) {
-      console.error('Failed to load store links:', error);
-      showNotification('error', 'Failed to load store links');
+      console.error("Failed to load store links:", error);
+      showNotification("error", "Failed to load store links");
     } finally {
       setLoadingStoreLinks(false);
     }
@@ -118,45 +132,58 @@ const EditProductModal: React.FC<EditProductModalProps> = ({
 
   // Handle price for store links
   const handleStoreLinkPriceInput = (index: number, value: string) => {
-    setStoreLinks(prev => prev.map((link, i) =>
-      i === index ? { ...link, price: value === '' ? 0 : parseInt(value, 10) } : link
-    ));
+    setStoreLinks((prev) =>
+      prev.map((link, i) =>
+        i === index
+          ? { ...link, price: value === "" ? 0 : parseInt(value, 10) }
+          : link
+      )
+    );
   };
 
-  const updateStoreLink = (index: number, field: keyof ExtendedStoreLinkInput, value: any) => {
-    setStoreLinks(prev => prev.map((link, i) => 
-      i === index ? { ...link, [field]: value } : link
-    ));
+  const updateStoreLink = (
+    index: number,
+    field: keyof ExtendedStoreLinkInput,
+    value: any
+  ) => {
+    setStoreLinks((prev) =>
+      prev.map((link, i) => (i === index ? { ...link, [field]: value } : link))
+    );
   };
 
   const removeStoreLink = (index: number) => {
-    setStoreLinks(prev => prev.filter((_, i) => i !== index));
+    setStoreLinks((prev) => prev.filter((_, i) => i !== index));
   };
 
-
-
-  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
+  const handleInputChange = (
+    e: React.ChangeEvent<
+      HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement
+    >
+  ) => {
     const { name, value } = e.target;
-    
-    setFormData(prev => ({
+
+    setFormData((prev) => ({
       ...prev,
-      [name]: value
+      [name]: value,
     }));
 
     // Clear error when user starts typing
     if (errors[name]) {
-      setErrors(prev => ({
+      setErrors((prev) => ({
         ...prev,
-        [name]: ''
+        [name]: "",
       }));
     }
   };
 
-
-
   const addStoreLinkAPI = async () => {
-    if (!product || !newStoreLink.store_name || !newStoreLink.url || newStoreLink.price <= 0) {
-      showNotification('error', 'Please fill all store link fields');
+    if (
+      !product ||
+      !newStoreLink.store_name ||
+      !newStoreLink.url ||
+      newStoreLink.price <= 0
+    ) {
+      showNotification("error", "Please fill all store link fields");
       return;
     }
 
@@ -165,54 +192,57 @@ const EditProductModal: React.FC<EditProductModalProps> = ({
         store_name: newStoreLink.store_name,
         url: newStoreLink.url,
         price: newStoreLink.price,
-        is_official: false
+        is_official: false,
       });
-      
+
       const addedStoreLink = response.store_link;
-      setStoreLinks(prev => [...prev, addedStoreLink]);
-      setNewStoreLink({ store_name: '', url: '', price: 0, is_official: false });
-      showNotification('success', 'Store link added successfully');
+      setStoreLinks((prev) => [...prev, addedStoreLink]);
+      setNewStoreLink({
+        store_name: "",
+        url: "",
+        price: 0,
+        is_official: false,
+      });
+      showNotification("success", "Store link added successfully");
     } catch (error) {
-      console.error('Failed to add store link:', error);
-      showNotification('error', 'Failed to add store link');
+      console.error("Failed to add store link:", error);
+      showNotification("error", "Failed to add store link");
     }
   };
-
-
 
   const deleteStoreLinkAPI = async (storeLinkId: number) => {
     if (!product) return;
 
     try {
       await adminAPI.deleteStoreLink(storeLinkId.toString());
-      setStoreLinks(prev => prev.filter(link => link.id !== storeLinkId));
-      showNotification('success', 'Store link deleted successfully');
-      
+      setStoreLinks((prev) => prev.filter((link) => link.id !== storeLinkId));
+      showNotification("success", "Store link deleted successfully");
+
       // Update the product price to reflect new lowest price
-      const remainingPrices = storeLinks.filter(link => link.id !== storeLinkId).map(link => link.price);
+      const remainingPrices = storeLinks
+        .filter((link) => link.id !== storeLinkId)
+        .map((link) => link.price);
       if (remainingPrices.length > 0) {
         const lowestPrice = Math.min(...remainingPrices);
-        setFormData(prev => ({ ...prev, price: lowestPrice }));
+        setFormData((prev) => ({ ...prev, price: lowestPrice }));
       } else {
-        setFormData(prev => ({ ...prev, price: 0 }));
+        setFormData((prev) => ({ ...prev, price: 0 }));
       }
     } catch (error) {
-      console.error('Failed to delete store link:', error);
-      showNotification('error', 'Failed to delete store link');
+      console.error("Failed to delete store link:", error);
+      showNotification("error", "Failed to delete store link");
     }
   };
-
-
 
   // Xóa ảnh cũ
   const handleDeleteExistingImage = async (imageId: string) => {
     if (!product) return;
     try {
       await adminAPI.deleteProductImage(imageId);
-      setExistingImages(prev => prev.filter(img => img.id !== imageId));
-      showNotification('success', 'Image deleted');
+      setExistingImages((prev) => prev.filter((img) => img.id !== imageId));
+      showNotification("success", "Image deleted");
     } catch (error) {
-      showNotification('error', 'Failed to delete image');
+      showNotification("error", "Failed to delete image");
     }
   };
 
@@ -220,25 +250,25 @@ const EditProductModal: React.FC<EditProductModalProps> = ({
     const newErrors: Record<string, string> = {};
 
     if (!formData.name.trim()) {
-      newErrors.name = 'Product name is required';
+      newErrors.name = "Product name is required";
     }
 
     if (!formData.description.trim()) {
-      newErrors.description = 'Description is required';
+      newErrors.description = "Description is required";
     }
 
     if (!formData.manufacturer.trim()) {
-      newErrors.manufacturer = 'Manufacturer is required';
+      newErrors.manufacturer = "Manufacturer is required";
     }
 
     if (!formData.product_url.trim()) {
-      newErrors.product_url = 'Product URL is required';
+      newErrors.product_url = "Product URL is required";
     } else if (!/^https?:\/\/.+/.test(formData.product_url)) {
-      newErrors.product_url = 'Product URL must be a valid HTTP/HTTPS URL';
+      newErrors.product_url = "Product URL must be a valid HTTP/HTTPS URL";
     }
 
     if (!formData.category_id) {
-      newErrors.category_id = 'Category is required';
+      newErrors.category_id = "Category is required";
     }
 
     setErrors(newErrors);
@@ -251,10 +281,14 @@ const EditProductModal: React.FC<EditProductModalProps> = ({
     setLoading(true);
     try {
       // Calculate price from store links
-      const lowestPrice = storeLinks.length > 0 
-        ? Math.min(...storeLinks.filter(link => link.price > 0).map(link => link.price))
-        : 0;
-      
+      const lowestPrice =
+        storeLinks.length > 0
+          ? Math.min(
+              ...storeLinks
+                .filter((link) => link.price > 0)
+                .map((link) => link.price)
+            )
+          : 0;
       // Prepare clean data for API with auto-calculated price
       const updatedFormData: Partial<ProductInput> = {
         name: formData.name,
@@ -264,43 +298,53 @@ const EditProductModal: React.FC<EditProductModalProps> = ({
         product_url: formData.product_url,
         availability: formData.availability,
         status: formData.status,
-        category_id: formData.category_id
+        category_id: formData.category_id,
       };
-      
       // Remove undefined values
       const cleanedData = Object.fromEntries(
-        Object.entries(updatedFormData).filter(([_, v]) => v !== undefined && v !== null && v !== '')
+        Object.entries(updatedFormData).filter(
+          ([_, v]) => v !== undefined && v !== null && v !== ""
+        )
       );
-      
-      console.log('Updating product with data:', cleanedData);
-      const updatedProduct = await adminAPI.updateProduct(product.id.toString(), cleanedData);
-      
+      // Update product info
+      await adminAPI.updateProduct(product.id.toString(), cleanedData);
       // Upload new images
       if (uploadedImages.length > 0) {
         for (let i = 0; i < uploadedImages.length; i++) {
           try {
-            await adminAPI.uploadProductImage(product.id.toString(), uploadedImages[i], i === 0);
+            await adminAPI.uploadProductImage(
+              product.id.toString(),
+              uploadedImages[i],
+              i === 0
+            );
           } catch (error) {
             console.error(`Failed to upload image ${i + 1}:`, error);
             // Try fallback to URL method if upload endpoint doesn't exist
             try {
-              await adminAPI.addProductImage(product.id.toString(), { 
-                image_url: URL.createObjectURL(uploadedImages[i]), 
-                is_primary: i === 0 
+              await adminAPI.addProductImage(product.id.toString(), {
+                image_url: URL.createObjectURL(uploadedImages[i]),
+                is_primary: i === 0,
               });
             } catch (fallbackError) {
-              console.error(`Fallback image upload also failed for image ${i + 1}:`, fallbackError);
-              showNotification('warning', `Failed to upload image: ${uploadedImages[i].name}`);
+              console.error(
+                `Fallback image upload also failed for image ${i + 1}:`,
+                fallbackError
+              );
+              showNotification(
+                "warning",
+                `Failed to upload image: ${uploadedImages[i].name}`
+              );
             }
           }
         }
       }
-      
-      showNotification('success', 'Product updated successfully');
-      onProductUpdated(updatedProduct);
+      // Fetch latest product details to ensure images are up-to-date
+      const latestProduct = await adminAPI.getProduct(product.id.toString());
+      showNotification("success", "Product updated successfully");
+      onProductUpdated(latestProduct);
       onClose();
     } catch (error) {
-      showNotification('error', 'Failed to update product');
+      showNotification("error", "Failed to update product");
     } finally {
       setLoading(false);
     }
@@ -310,7 +354,12 @@ const EditProductModal: React.FC<EditProductModalProps> = ({
     if (!loading) {
       onClose();
       setErrors({});
-      setNewStoreLink({ store_name: '', url: '', price: 0, is_official: false });
+      setNewStoreLink({
+        store_name: "",
+        url: "",
+        price: 0,
+        is_official: false,
+      });
       setUploadedImages([]);
     }
   };
@@ -319,18 +368,24 @@ const EditProductModal: React.FC<EditProductModalProps> = ({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black bg-opacity-50">
-      <div className={`w-full max-w-2xl max-h-[90vh] overflow-y-auto rounded-xl shadow-xl ${
-        isDark ? 'bg-gray-800' : 'bg-white'
-      }`}>
+      <div
+        className={`w-full max-w-2xl max-h-[90vh] overflow-y-auto rounded-xl shadow-xl ${
+          isDark ? "bg-gray-800" : "bg-white"
+        }`}
+      >
         {/* Header */}
-        <div className={`flex items-center justify-between p-6 border-b ${
-          isDark ? 'border-gray-700' : 'border-gray-200'
-        }`}>
+        <div
+          className={`flex items-center justify-between p-6 border-b ${
+            isDark ? "border-gray-700" : "border-gray-200"
+          }`}
+        >
           <div className="flex items-center space-x-3">
             <Package className="w-6 h-6 text-blue-500" />
-            <h2 className={`text-xl font-semibold ${
-              isDark ? 'text-white' : 'text-gray-900'
-            }`}>
+            <h2
+              className={`text-xl font-semibold ${
+                isDark ? "text-white" : "text-gray-900"
+              }`}
+            >
               Edit Product
             </h2>
           </div>
@@ -338,9 +393,9 @@ const EditProductModal: React.FC<EditProductModalProps> = ({
             onClick={handleClose}
             disabled={loading}
             className={`p-2 rounded-lg transition-colors ${
-              isDark 
-                ? 'hover:bg-gray-700 text-gray-400 hover:text-gray-300' 
-                : 'hover:bg-gray-100 text-gray-500 hover:text-gray-700'
+              isDark
+                ? "hover:bg-gray-700 text-gray-400 hover:text-gray-300"
+                : "hover:bg-gray-100 text-gray-500 hover:text-gray-700"
             } disabled:opacity-50`}
           >
             <X className="w-5 h-5" />
@@ -351,9 +406,11 @@ const EditProductModal: React.FC<EditProductModalProps> = ({
         <form onSubmit={handleSubmit} className="p-6 space-y-6">
           {/* Product Name */}
           <div>
-            <label className={`block text-sm font-medium mb-2 ${
-              isDark ? 'text-gray-300' : 'text-gray-700'
-            }`}>
+            <label
+              className={`block text-sm font-medium mb-2 ${
+                isDark ? "text-gray-300" : "text-gray-700"
+              }`}
+            >
               Product Name *
             </label>
             <input
@@ -362,10 +419,10 @@ const EditProductModal: React.FC<EditProductModalProps> = ({
               value={formData.name}
               onChange={handleInputChange}
               className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 ${
-                isDark 
-                  ? 'bg-gray-700 border-gray-600 text-white placeholder-gray-400' 
-                  : 'bg-white border-gray-300 text-gray-900 placeholder-gray-500'
-              } ${errors.name ? 'border-red-500' : ''}`}
+                isDark
+                  ? "bg-gray-700 border-gray-600 text-white placeholder-gray-400"
+                  : "bg-white border-gray-300 text-gray-900 placeholder-gray-500"
+              } ${errors.name ? "border-red-500" : ""}`}
               placeholder="Enter product name"
               disabled={loading}
             />
@@ -376,9 +433,11 @@ const EditProductModal: React.FC<EditProductModalProps> = ({
 
           {/* Description */}
           <div>
-            <label className={`block text-sm font-medium mb-2 ${
-              isDark ? 'text-gray-300' : 'text-gray-700'
-            }`}>
+            <label
+              className={`block text-sm font-medium mb-2 ${
+                isDark ? "text-gray-300" : "text-gray-700"
+              }`}
+            >
               Description *
             </label>
             <textarea
@@ -387,10 +446,10 @@ const EditProductModal: React.FC<EditProductModalProps> = ({
               onChange={handleInputChange}
               rows={4}
               className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 ${
-                isDark 
-                  ? 'bg-gray-700 border-gray-600 text-white placeholder-gray-400' 
-                  : 'bg-white border-gray-300 text-gray-900 placeholder-gray-500'
-              } ${errors.description ? 'border-red-500' : ''}`}
+                isDark
+                  ? "bg-gray-700 border-gray-600 text-white placeholder-gray-400"
+                  : "bg-white border-gray-300 text-gray-900 placeholder-gray-500"
+              } ${errors.description ? "border-red-500" : ""}`}
               placeholder="Enter product description"
               disabled={loading}
             />
@@ -402,9 +461,11 @@ const EditProductModal: React.FC<EditProductModalProps> = ({
           {/* Manufacturer and Category */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
-              <label className={`block text-sm font-medium mb-2 ${
-                isDark ? 'text-gray-300' : 'text-gray-700'
-              }`}>
+              <label
+                className={`block text-sm font-medium mb-2 ${
+                  isDark ? "text-gray-300" : "text-gray-700"
+                }`}
+              >
                 Manufacturer *
               </label>
               <input
@@ -413,22 +474,26 @@ const EditProductModal: React.FC<EditProductModalProps> = ({
                 value={formData.manufacturer}
                 onChange={handleInputChange}
                 className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 ${
-                  isDark 
-                    ? 'bg-gray-700 border-gray-600 text-white placeholder-gray-400' 
-                    : 'bg-white border-gray-300 text-gray-900 placeholder-gray-500'
-                } ${errors.manufacturer ? 'border-red-500' : ''}`}
+                  isDark
+                    ? "bg-gray-700 border-gray-600 text-white placeholder-gray-400"
+                    : "bg-white border-gray-300 text-gray-900 placeholder-gray-500"
+                } ${errors.manufacturer ? "border-red-500" : ""}`}
                 placeholder="Enter manufacturer"
                 disabled={loading}
               />
               {errors.manufacturer && (
-                <p className="mt-1 text-sm text-red-500">{errors.manufacturer}</p>
+                <p className="mt-1 text-sm text-red-500">
+                  {errors.manufacturer}
+                </p>
               )}
             </div>
 
             <div>
-              <label className={`block text-sm font-medium mb-2 ${
-                isDark ? 'text-gray-300' : 'text-gray-700'
-              }`}>
+              <label
+                className={`block text-sm font-medium mb-2 ${
+                  isDark ? "text-gray-300" : "text-gray-700"
+                }`}
+              >
                 Category *
               </label>
               <select
@@ -437,70 +502,109 @@ const EditProductModal: React.FC<EditProductModalProps> = ({
                 onChange={handleInputChange}
                 disabled={loading || loadingCategories}
                 className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 ${
-                  isDark 
-                    ? 'bg-gray-700 border-gray-600 text-white' 
-                    : 'bg-white border-gray-300 text-gray-900'
-                } ${errors.category_id ? 'border-red-500' : ''}`}
+                  isDark
+                    ? "bg-gray-700 border-gray-600 text-white"
+                    : "bg-white border-gray-300 text-gray-900"
+                } ${errors.category_id ? "border-red-500" : ""}`}
               >
                 <option value="">
-                  {loadingCategories ? 'Loading categories...' : 'Select a category'}
+                  {loadingCategories
+                    ? "Loading categories..."
+                    : "Select a category"}
                 </option>
-                {categories.map(category => (
+                {categories.map((category) => (
                   <option key={category.id} value={category.id}>
                     {category.name}
                   </option>
                 ))}
               </select>
               {errors.category_id && (
-                <p className="mt-1 text-sm text-red-500">{errors.category_id}</p>
+                <p className="mt-1 text-sm text-red-500">
+                  {errors.category_id}
+                </p>
               )}
             </div>
           </div>
 
           {/* Store Links */}
           <div>
-            <label className={`block text-sm font-medium mb-2 ${isDark ? 'text-gray-300' : 'text-gray-700'}`}>
+            <label
+              className={`block text-sm font-medium mb-2 ${
+                isDark ? "text-gray-300" : "text-gray-700"
+              }`}
+            >
               Store Links
             </label>
-            
+
             {loadingStoreLinks ? (
               <div className="flex items-center justify-center py-4">
                 <Loader2 className="w-6 h-6 animate-spin text-blue-500" />
-                <span className="ml-2 text-sm text-gray-500">Loading store links...</span>
+                <span className="ml-2 text-sm text-gray-500">
+                  Loading store links...
+                </span>
               </div>
             ) : (
               <>
                 {/* Existing store links */}
                 {storeLinks.map((link, idx) => (
-                  <div key={link.id || idx} className={`flex items-center gap-2 mb-2 p-2 border rounded ${isDark ? 'border-gray-600 bg-gray-700' : 'border-gray-300 bg-gray-50'}`}>
+                  <div
+                    key={link.id || idx}
+                    className={`flex items-center gap-2 mb-2 p-2 border rounded ${
+                      isDark
+                        ? "border-gray-600 bg-gray-700"
+                        : "border-gray-300 bg-gray-50"
+                    }`}
+                  >
                     <input
                       type="text"
                       placeholder="Store Name"
                       value={link.store_name}
-                      onChange={e => updateStoreLink(idx, 'store_name', e.target.value)}
-                      className={`px-2 py-1 border rounded w-1/4 ${isDark ? 'bg-gray-600 border-gray-500 text-white' : 'bg-white border-gray-300'}`}
+                      onChange={(e) =>
+                        updateStoreLink(idx, "store_name", e.target.value)
+                      }
+                      className={`px-2 py-1 border rounded w-1/4 ${
+                        isDark
+                          ? "bg-gray-600 border-gray-500 text-white"
+                          : "bg-white border-gray-300"
+                      }`}
                       disabled={loading}
                     />
                     <input
                       type="text"
                       placeholder="Price"
-                      value={link.price === 0 ? '' : link.price}
-                      onChange={e => handleStoreLinkPriceInput(idx, e.target.value)}
-                      className={`px-2 py-1 border rounded w-1/4 ${isDark ? 'bg-gray-600 border-gray-500 text-white' : 'bg-white border-gray-300'}`}
+                      value={link.price === 0 ? "" : link.price}
+                      onChange={(e) =>
+                        handleStoreLinkPriceInput(idx, e.target.value)
+                      }
+                      className={`px-2 py-1 border rounded w-1/4 ${
+                        isDark
+                          ? "bg-gray-600 border-gray-500 text-white"
+                          : "bg-white border-gray-300"
+                      }`}
                       disabled={loading}
                     />
                     <input
                       type="url"
                       placeholder="URL"
                       value={link.url}
-                      onChange={e => updateStoreLink(idx, 'url', e.target.value)}
-                      className={`px-2 py-1 border rounded flex-1 ${isDark ? 'bg-gray-600 border-gray-500 text-white' : 'bg-white border-gray-300'}`}
+                      onChange={(e) =>
+                        updateStoreLink(idx, "url", e.target.value)
+                      }
+                      className={`px-2 py-1 border rounded flex-1 ${
+                        isDark
+                          ? "bg-gray-600 border-gray-500 text-white"
+                          : "bg-white border-gray-300"
+                      }`}
                       disabled={loading}
                     />
-                    <button 
-                      type="button" 
-                      onClick={() => link.id ? deleteStoreLinkAPI(link.id) : removeStoreLink(idx)} 
-                      disabled={loading} 
+                    <button
+                      type="button"
+                      onClick={() =>
+                        link.id
+                          ? deleteStoreLinkAPI(link.id)
+                          : removeStoreLink(idx)
+                      }
+                      disabled={loading}
                       className="text-red-500 hover:text-red-700 p-1"
                       title="Delete store link"
                     >
@@ -508,37 +612,73 @@ const EditProductModal: React.FC<EditProductModalProps> = ({
                     </button>
                   </div>
                 ))}
-                
+
                 {/* Add new store link */}
-                <div className={`flex items-center gap-2 mb-2 p-2 border-2 border-dashed rounded ${isDark ? 'border-gray-600' : 'border-gray-300'}`}>
+                <div
+                  className={`flex items-center gap-2 mb-2 p-2 border-2 border-dashed rounded ${
+                    isDark ? "border-gray-600" : "border-gray-300"
+                  }`}
+                >
                   <input
                     type="text"
                     placeholder="Store Name"
                     value={newStoreLink.store_name}
-                    onChange={e => setNewStoreLink((prev: StoreLinkInput) => ({ ...prev, store_name: e.target.value }))}
-                    className={`px-2 py-1 border rounded w-1/4 ${isDark ? 'bg-gray-600 border-gray-500 text-white' : 'bg-white border-gray-300'}`}
+                    onChange={(e) =>
+                      setNewStoreLink((prev: StoreLinkInput) => ({
+                        ...prev,
+                        store_name: e.target.value,
+                      }))
+                    }
+                    className={`px-2 py-1 border rounded w-1/4 ${
+                      isDark
+                        ? "bg-gray-600 border-gray-500 text-white"
+                        : "bg-white border-gray-300"
+                    }`}
                     disabled={loading}
                   />
                   <input
                     type="number"
                     placeholder="Price"
-                    value={newStoreLink.price === 0 ? '' : newStoreLink.price}
-                    onChange={e => setNewStoreLink((prev: StoreLinkInput) => ({ ...prev, price: parseFloat(e.target.value) || 0 }))}
-                    className={`px-2 py-1 border rounded w-1/4 ${isDark ? 'bg-gray-600 border-gray-500 text-white' : 'bg-white border-gray-300'}`}
+                    value={newStoreLink.price === 0 ? "" : newStoreLink.price}
+                    onChange={(e) =>
+                      setNewStoreLink((prev: StoreLinkInput) => ({
+                        ...prev,
+                        price: parseFloat(e.target.value) || 0,
+                      }))
+                    }
+                    className={`px-2 py-1 border rounded w-1/4 ${
+                      isDark
+                        ? "bg-gray-600 border-gray-500 text-white"
+                        : "bg-white border-gray-300"
+                    }`}
                     disabled={loading}
                   />
                   <input
                     type="url"
                     placeholder="URL"
                     value={newStoreLink.url}
-                    onChange={e => setNewStoreLink((prev: StoreLinkInput) => ({ ...prev, url: e.target.value }))}
-                    className={`px-2 py-1 border rounded flex-1 ${isDark ? 'bg-gray-600 border-gray-500 text-white' : 'bg-white border-gray-300'}`}
+                    onChange={(e) =>
+                      setNewStoreLink((prev: StoreLinkInput) => ({
+                        ...prev,
+                        url: e.target.value,
+                      }))
+                    }
+                    className={`px-2 py-1 border rounded flex-1 ${
+                      isDark
+                        ? "bg-gray-600 border-gray-500 text-white"
+                        : "bg-white border-gray-300"
+                    }`}
                     disabled={loading}
                   />
-                  <button 
-                    type="button" 
-                    onClick={addStoreLinkAPI} 
-                    disabled={loading || !newStoreLink.store_name || !newStoreLink.url || newStoreLink.price <= 0} 
+                  <button
+                    type="button"
+                    onClick={addStoreLinkAPI}
+                    disabled={
+                      loading ||
+                      !newStoreLink.store_name ||
+                      !newStoreLink.url ||
+                      newStoreLink.price <= 0
+                    }
                     className="text-blue-500 hover:text-blue-700 p-1 disabled:opacity-50"
                     title="Add store link"
                   >
@@ -547,7 +687,7 @@ const EditProductModal: React.FC<EditProductModalProps> = ({
                 </div>
               </>
             )}
-            
+
             {errors.storeLinks && (
               <p className="mt-1 text-sm text-red-500">{errors.storeLinks}</p>
             )}
@@ -555,9 +695,11 @@ const EditProductModal: React.FC<EditProductModalProps> = ({
 
           {/* Product URL */}
           <div>
-            <label className={`block text-sm font-medium mb-2 ${
-              isDark ? 'text-gray-300' : 'text-gray-700'
-            }`}>
+            <label
+              className={`block text-sm font-medium mb-2 ${
+                isDark ? "text-gray-300" : "text-gray-700"
+              }`}
+            >
               Product URL *
             </label>
             <input
@@ -566,10 +708,10 @@ const EditProductModal: React.FC<EditProductModalProps> = ({
               value={formData.product_url}
               onChange={handleInputChange}
               className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 ${
-                isDark 
-                  ? 'bg-gray-700 border-gray-600 text-white placeholder-gray-400' 
-                  : 'bg-white border-gray-300 text-gray-900 placeholder-gray-500'
-              } ${errors.product_url ? 'border-red-500' : ''}`}
+                isDark
+                  ? "bg-gray-700 border-gray-600 text-white placeholder-gray-400"
+                  : "bg-white border-gray-300 text-gray-900 placeholder-gray-500"
+              } ${errors.product_url ? "border-red-500" : ""}`}
               placeholder="https://example.com/product"
               disabled={loading}
             />
@@ -580,27 +722,36 @@ const EditProductModal: React.FC<EditProductModalProps> = ({
 
           {/* Product Images */}
           <div>
-            <label className={`block text-sm font-medium mb-3 ${isDark ? 'text-gray-300' : 'text-gray-700'}`}>
+            <label
+              className={`block text-sm font-medium mb-3 ${
+                isDark ? "text-gray-300" : "text-gray-700"
+              }`}
+            >
               Product Images
             </label>
-            
+
             {/* Existing Images */}
             {existingImages.length > 0 && (
               <div className="mb-4">
-                <h4 className={`text-sm font-medium mb-2 ${isDark ? 'text-gray-400' : 'text-gray-600'}`}>
+                <h4
+                  className={`text-sm font-medium mb-2 ${
+                    isDark ? "text-gray-400" : "text-gray-600"
+                  }`}
+                >
                   Current Images ({existingImages.length})
                 </h4>
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                   {existingImages.map((img, index) => (
                     <div key={img.id} className="relative group">
                       <div className="aspect-square rounded-lg overflow-hidden border-2 border-gray-200 hover:border-blue-400 transition-colors">
-                        <img 
-                          src={img.url} 
+                        <img
+                          src={img.url}
                           alt={`Product image ${index + 1}`}
                           className="w-full h-full object-cover"
                           onError={(e) => {
                             const target = e.target as HTMLImageElement;
-                            target.src = 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjQiIGhlaWdodD0iMjQiIHZpZXdCb3g9IjAgMCAyNCAyNCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPHJlY3Qgd2lkdGg9IjI0IiBoZWlnaHQ9IjI0IiBmaWxsPSIjRjNGNEY2Ii8+CjxwYXRoIGQ9Ik0xMiAxNkM5Ljc5IDEzLjc5IDkuNzkgMTAuMjEgMTIgOEMxNC4yMSAxMC4yMSAxNC4yMSAxMy43OSAxMiAxNloiIGZpbGw9IiM5Q0EzQUYiLz4KPC9zdmc+';
+                            target.src =
+                              "data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjQiIGhlaWdodD0iMjQiIHZpZXdCb3g9IjAgMCAyNCAyNCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPHJlY3Qgd2lkdGg9IjI0IiBoZWlnaHQ9IjI0IiBmaWxsPSIjRjNGNEY2Ii8+CjxwYXRoIGQ9Ik0xMiAxNkM5Ljc5IDEzLjc5IDkuNzkgMTAuMjEgMTIgOEMxNC4yMSAxMC4yMSAxNC4yMSAxMy43OSAxMiAxNloiIGZpbGw9IiM5Q0EzQUYiLz4KPC9zdmc+";
                           }}
                         />
                       </div>
@@ -621,21 +772,22 @@ const EditProductModal: React.FC<EditProductModalProps> = ({
             {/* Upload New Images */}
             <DragZone
               onFilesSelected={(files: File[]) => setUploadedImages(files)}
-              acceptedTypes={['image/*']}
+              acceptedTypes={["image/*"]}
               maxFiles={10}
               title="Upload Product Images"
               description="Click to upload or drag and drop"
               className="mb-4"
             />
-
           </div>
 
           {/* Availability and Status */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
-              <label className={`block text-sm font-medium mb-2 ${
-                isDark ? 'text-gray-300' : 'text-gray-700'
-              }`}>
+              <label
+                className={`block text-sm font-medium mb-2 ${
+                  isDark ? "text-gray-300" : "text-gray-700"
+                }`}
+              >
                 Availability
               </label>
               <select
@@ -644,9 +796,9 @@ const EditProductModal: React.FC<EditProductModalProps> = ({
                 onChange={handleInputChange}
                 disabled={loading}
                 className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 ${
-                  isDark 
-                    ? 'bg-gray-700 border-gray-600 text-white' 
-                    : 'bg-white border-gray-300 text-gray-900'
+                  isDark
+                    ? "bg-gray-700 border-gray-600 text-white"
+                    : "bg-white border-gray-300 text-gray-900"
                 }`}
               >
                 <option value="Available">Available</option>
@@ -657,9 +809,11 @@ const EditProductModal: React.FC<EditProductModalProps> = ({
             </div>
 
             <div>
-              <label className={`block text-sm font-medium mb-2 ${
-                isDark ? 'text-gray-300' : 'text-gray-700'
-              }`}>
+              <label
+                className={`block text-sm font-medium mb-2 ${
+                  isDark ? "text-gray-300" : "text-gray-700"
+                }`}
+              >
                 Status
               </label>
               <select
@@ -668,9 +822,9 @@ const EditProductModal: React.FC<EditProductModalProps> = ({
                 onChange={handleInputChange}
                 disabled={loading}
                 className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 ${
-                  isDark 
-                    ? 'bg-gray-700 border-gray-600 text-white' 
-                    : 'bg-white border-gray-300 text-gray-900'
+                  isDark
+                    ? "bg-gray-700 border-gray-600 text-white"
+                    : "bg-white border-gray-300 text-gray-900"
                 }`}
               >
                 <option value="active">Active</option>
@@ -688,8 +842,8 @@ const EditProductModal: React.FC<EditProductModalProps> = ({
               disabled={loading}
               className={`px-4 py-2 text-sm font-medium rounded-lg transition-colors ${
                 isDark
-                  ? 'bg-gray-700 text-gray-300 hover:bg-gray-600'
-                  : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                  ? "bg-gray-700 text-gray-300 hover:bg-gray-600"
+                  : "bg-gray-100 text-gray-700 hover:bg-gray-200"
               } disabled:opacity-50`}
             >
               Cancel

@@ -1,0 +1,80 @@
+version: "3.8"
+
+services:
+  # Backend API service
+  api:
+    build:
+      context: ./databaseAPI
+      dockerfile: Dockerfile
+    container_name: product-review-api
+    restart: unless-stopped
+    environment:
+      # Database configuration
+      - DB_HOST=db
+      - DB_NAME=LimReview
+      - DB_USER=postgres
+      - DB_PASS=your-secure-password-here
+      - DB_PORT=5432
+      - DB_MIN_CONN=2
+      - DB_MAX_CONN=20
+
+      # API configuration
+      - API_BASE_URL=https://api.nguyenhai.site
+
+      # JWT Security (production key)
+      - SECRET_KEY=your-super-secure-jwt-key-for-production-change-this
+
+      # Email SMTP configuration
+      - SMTP_SERVER=smtp.gmail.com
+      - SMTP_PORT=587
+      - SMTP_USERNAME=${SMTP_USERNAME}
+      - SMTP_PASSWORD=${SMTP_PASSWORD}
+      - FROM_EMAIL=${FROM_EMAIL}
+
+      # Discord configuration
+      - DISCORD_BOT_TOKEN=${DISCORD_BOT_TOKEN}
+      - DISCORD_GUILD_ID=${DISCORD_GUILD_ID}
+      - DISCORD_CHANNEL_ID=${DISCORD_CHANNEL_ID}
+    networks:
+      - web
+      - backend
+    depends_on:
+      - db
+    labels:
+      # Caddy reverse proxy labels
+      - "caddy=api.nguyenhai.site"
+      - "caddy.reverse_proxy={{upstreams 8000}}"
+      - "caddy.header=Access-Control-Allow-Origin *"
+      - "caddy.header=Access-Control-Allow-Methods 'GET, POST, PUT, DELETE, OPTIONS'"
+      - "caddy.header=Access-Control-Allow-Headers 'Content-Type, Authorization'"
+
+  # PostgreSQL database
+  db:
+    image: postgres:15-alpine
+    container_name: product-review-db
+    restart: unless-stopped
+    environment:
+      - POSTGRES_DB=LimReview
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=your-secure-password-here
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./docs/Schema.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    networks:
+      - backend
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d LimReview"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
+volumes:
+  postgres_data:
+
+networks:
+  # External network shared with Caddy
+  web:
+    external: true
+  # Internal network for backend services
+  backend:
+    driver: bridge

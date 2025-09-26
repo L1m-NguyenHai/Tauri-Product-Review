@@ -113,7 +113,7 @@ async def update_user_avatar(
             
             # Try Discord upload first
             try:
-                from discord_media import upload_media_to_discord
+                from utils.discord_media import upload_media_to_discord
                 logger.info("Attempting Discord upload for avatar...")
                 avatar_url = await upload_media_to_discord(temp_file_path)
                 logger.info(f"Discord upload successful for avatar, URL: {avatar_url}")

@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, ReactNode } from 'react';
+import React, { createContext, useContext, useState, ReactNode } from "react";
 
 interface ApiConfigContextType {
   baseUrl: string;
@@ -6,16 +6,20 @@ interface ApiConfigContextType {
   resetToDefault: () => void;
 }
 
-const DEFAULT_BASE_URL = 'http://localhost:8000/api/v1';
-const STORAGE_KEY = 'api_base_url';
+const DEFAULT_BASE_URL = "https://api.nguyenhai.site/api/v1";
+const STORAGE_KEY = "api_base_url";
 
-const ApiConfigContext = createContext<ApiConfigContextType | undefined>(undefined);
+const ApiConfigContext = createContext<ApiConfigContextType | undefined>(
+  undefined
+);
 
 interface ApiConfigProviderProps {
   children: ReactNode;
 }
 
-export const ApiConfigProvider: React.FC<ApiConfigProviderProps> = ({ children }) => {
+export const ApiConfigProvider: React.FC<ApiConfigProviderProps> = ({
+  children,
+}) => {
   const [baseUrl, setBaseUrlState] = useState<string>(() => {
     // Load from localStorage on initialization
     const saved = localStorage.getItem(STORAGE_KEY);
@@ -43,7 +47,7 @@ export const ApiConfigProvider: React.FC<ApiConfigProviderProps> = ({ children }
 export const useApiConfig = (): ApiConfigContextType => {
   const context = useContext(ApiConfigContext);
   if (context === undefined) {
-    throw new Error('useApiConfig must be used within an ApiConfigProvider');
+    throw new Error("useApiConfig must be used within an ApiConfigProvider");
   }
   return context;
 };

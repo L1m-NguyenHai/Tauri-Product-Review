@@ -1,0 +1,37 @@
+# Development files
+.env
+.env.example
+.env.production
+.hintrc
+README.md
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.so
+.pytest_cache/
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Database files
+*.db
+*.sqlite3
+
+# Archives
+*.tar
+*.zip
+SCHEMA.Tar
