@@ -21,6 +21,44 @@ logger = logging.getLogger("uvicorn.error")
 
 router = APIRouter(prefix="/reviews", tags=["Reviews"])
 
+# Helper function to filter profanity using LMStudio
+async def filter_profanity_content(content: str) -> str:
+    """Filter profanity from content using LMStudio API"""
+    try:
+        api_url = "http://localhost:1234/v1/chat/completions"  # LMStudio endpoint
+        payload = {
+            "model": "local-model",  # LMStudio sử dụng model local
+            "messages": [
+                {
+                    "role": "system",
+                    "content": "You are a precise content moderator. Your ONLY task is to identify and replace profanity, vulgar words, offensive slurs, and inappropriate language in ANY language with asterisks (*). IMPORTANT RULES: 1) Keep the EXACT original text structure, punctuation, spacing, and formatting. 2) ONLY replace the inappropriate words, leave everything else unchanged. 3) Replace each inappropriate word with the same number of asterisks as the original word length. 4) Do NOT add explanations, comments, or any extra text. 5) Do NOT change normal words that are not offensive. Return ONLY the text with inappropriate words masked."
+                },
+                {
+                    "role": "user",
+                    "content": content
+                }
+            ],
+            "temperature": 0.0,
+            "max_tokens": 1000
+        }
+        response = requests.post(api_url, json=payload, timeout=15)
+        response.raise_for_status()
+        result = response.json()
+        
+        if "choices" in result and len(result["choices"]) > 0:
+            filtered_content = result["choices"][0]["message"]["content"].strip()
+            # Kiểm tra nếu response trống hoặc không hợp lệ, fallback sang original
+            if not filtered_content or len(filtered_content.strip()) == 0:
+                return content
+            return filtered_content
+        else:
+            return content
+            
+    except Exception as e:
+        # Nếu LMStudio API fail, fallback dùng content gốc
+        logger.warning("LMStudio profanity filter API failed, using original content: %s", e)
+        return content
+
 @router.get("/", response_model=List[ReviewResponse])
 def list_reviews(
     limit: int = Query(20, ge=1, le=100),
@@ -161,7 +199,7 @@ def get_review(review_id: str):
         put_conn(conn)
 
 @router.post("/", response_model=ReviewResponse)
-def create_review(
+async def create_review(
     review: ReviewCreate,
     current_user: dict = Depends(get_current_user)
 ):
@@ -189,6 +227,10 @@ def create_review(
                     detail="You have already reviewed this product"
                 )
             
+            # Filter profanity from title and content
+            filtered_title = await filter_profanity_content(review.title)
+            filtered_content = await filter_profanity_content(review.content)
+            
             # Determine initial status based on user role
             # Reviewers get auto-published, regular users need approval
             initial_status = "published" if current_user.get("role") == "reviewer" else "pending"
@@ -203,7 +245,7 @@ def create_review(
                 RETURNING *
             """, (
                 review_id, str(current_user["id"]), str(review.product_id),
-                review.rating, review.title, review.content, initial_status
+                review.rating, filtered_title, filtered_content, initial_status
             ))
             
             new_review = cur.fetchone()
@@ -233,7 +275,7 @@ def create_review(
         put_conn(conn)
 
 @router.put("/{review_id}", response_model=ReviewResponse)
-def update_review(
+async def update_review(
     review_id: str,
     review_update: ReviewUpdate,
     current_user: dict = Depends(get_current_user)
@@ -259,12 +301,19 @@ def update_review(
                     detail="Not authorized to update this review"
                 )
             
-            # Build update query
+            # Build update query with profanity filtering
             update_fields = []
             values = []
+            update_data = review_update.dict(exclude_unset=True)
             
-            for field, value in review_update.dict(exclude_unset=True).items():
+            for field, value in update_data.items():
                 if value is not None:
+                    # Apply profanity filter to text fields
+                    if field == "title":
+                        value = await filter_profanity_content(value)
+                    elif field == "content":
+                        value = await filter_profanity_content(value)
+                    
                     update_fields.append(f"{field} = %s")
                     values.append(value)
             
@@ -350,7 +399,7 @@ def delete_review(
 
 # Review Pros
 @router.post("/{review_id}/pros", response_model=ReviewProResponse)
-def add_review_pro(
+async def add_review_pro(
     review_id: str,
     pro: ReviewProCreate,
     current_user: dict = Depends(get_current_user)
@@ -375,12 +424,15 @@ def add_review_pro(
                     detail="Not authorized to modify this review"
                 )
             
+            # Filter profanity from pro text
+            filtered_pro_text = await filter_profanity_content(pro.pro_text)
+            
             pro_id = str(uuid.uuid4())
             cur.execute("""
                 INSERT INTO review_pros (id, review_id, pro_text, sort_order)
                 VALUES (%s, %s, %s, %s)
                 RETURNING *
-            """, (pro_id, review_id, pro.pro_text, pro.sort_order))
+            """, (pro_id, review_id, filtered_pro_text, pro.sort_order))
             
             new_pro = cur.fetchone()
             conn.commit()
@@ -397,7 +449,7 @@ def add_review_pro(
 
 # Review Cons
 @router.post("/{review_id}/cons", response_model=ReviewConResponse)
-def add_review_con(
+async def add_review_con(
     review_id: str,
     con: ReviewConCreate,
     current_user: dict = Depends(get_current_user)
@@ -422,12 +474,15 @@ def add_review_con(
                     detail="Not authorized to modify this review"
                 )
             
+            # Filter profanity from con text
+            filtered_con_text = await filter_profanity_content(con.con_text)
+            
             con_id = str(uuid.uuid4())
             cur.execute("""
                 INSERT INTO review_cons (id, review_id, con_text, sort_order)
                 VALUES (%s, %s, %s, %s)
                 RETURNING *
-            """, (con_id, review_id, con.con_text, con.sort_order))
+            """, (con_id, review_id, filtered_con_text, con.sort_order))
             
             new_con = cur.fetchone()
             conn.commit()
@@ -831,7 +886,7 @@ def list_review_comments(
         put_conn(conn)
 
 @router.post("/{review_id}/comments", response_model=dict)
-def create_review_comment(
+async def create_review_comment(
     review_id: str,
     comment: dict,
     current_user: dict = Depends(get_current_user)
@@ -840,17 +895,8 @@ def create_review_comment(
     conn = get_conn()
     try:
         with conn.cursor(cursor_factory=RealDictCursor) as cur:
-            # --- Call clean-comment API trước khi lưu ---
-            try:
-                api_url = "http://127.0.0.1:8001/clean-comment"  # endpoint FastAPI (đã đổi sang port 8001)
-                payload = {"text": comment["content"]}
-                response = requests.post(api_url, json=payload, timeout=5)
-                response.raise_for_status()
-                masked_content = response.json()["masked"]
-            except Exception as e:
-                # Nếu API fail, fallback dùng content gốc
-                logger.warning("Clean comment API failed, using original content: %s", e)
-                masked_content = comment["content"]
+            # Filter profanity from comment content
+            masked_content = await filter_profanity_content(comment["content"])
 
             comment_id = str(uuid.uuid4())
             cur.execute(
@@ -877,7 +923,7 @@ def create_review_comment(
         put_conn(conn)
 
 @router.put("/comments/{comment_id}", response_model=dict)
-def update_review_comment(
+async def update_review_comment(
     comment_id: str,
     comment_update: dict,
     current_user: dict = Depends(get_current_user)
@@ -909,6 +955,10 @@ def update_review_comment(
 
             for field, value in comment_update.items():
                 if value is not None:
+                    # Apply profanity filter to content field
+                    if field == "content":
+                        value = await filter_profanity_content(value)
+                    
                     update_fields.append(f"{field} = %s")
                     values.append(value)
 

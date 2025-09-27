@@ -6,6 +6,7 @@ import React, {
   useCallback,
 } from "react";
 import { authAPI, type User } from "../services/api";
+import { blockedUsersService } from "../services/blockedUsers";
 
 interface AuthContextType {
   user: User | null;
@@ -57,6 +58,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
   const login = useCallback(
     async (email: string, password: string): Promise<boolean> => {
       try {
+        // Check if user is blocked before attempting login
+        const isBlocked = await blockedUsersService.isUserBlocked("", email);
+        if (isBlocked) {
+          throw new Error("USER_BLOCKED");
+        }
+
         // Authenticate and get the token
         const { access_token, token_type } = await authAPI.login(
           email,
@@ -70,12 +77,29 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
         // Use the token to fetch user details
         const userData = await authAPI.getMe();
 
+        // Double check if user is blocked by userId after getting user data
+        const isBlockedByUserId = await blockedUsersService.isUserBlocked(
+          userData.id,
+          userData.email
+        );
+        if (isBlockedByUserId) {
+          // Clear tokens and throw error
+          localStorage.removeItem("access_token");
+          localStorage.removeItem("token_type");
+          throw new Error("USER_BLOCKED");
+        }
+
         // Update the user state with the fetched details
         setUser(userData);
 
         return true;
       } catch (error: any) {
         console.error("Login failed:", error);
+
+        // Handle blocked user error
+        if (error.message === "USER_BLOCKED") {
+          throw new Error("USER_BLOCKED");
+        }
 
         // Re-throw error with proper details for the UI to handle
         if (
