@@ -55,3 +55,7 @@ def put_conn(conn):
             pool.putconn(conn)
         except Exception:
             pass
+
+def get_pool():
+    """Get the connection pool instance"""
+    return pool

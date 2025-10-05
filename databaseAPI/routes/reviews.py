@@ -10,6 +10,7 @@ from models.schemas import (
 from auth.security import get_current_user, get_current_admin_user
 from database.connection import get_conn, put_conn
 from psycopg2.extras import RealDictCursor
+from p2p_sync.hooks import p2p_hooks
 import logging
 import uuid
 import tempfile
@@ -251,6 +252,9 @@ async def create_review(
             new_review = cur.fetchone()
             conn.commit()
             
+            # Trigger P2P sync after review creation
+            await p2p_hooks.on_review_created(new_review["id"])
+            
             # Get additional info
             cur.execute("""
                 SELECT 
@@ -333,6 +337,9 @@ async def update_review(
             cur.execute(query, values)
             updated_review = cur.fetchone()
             conn.commit()
+            
+            # Trigger P2P sync after review update
+            await p2p_hooks.on_review_updated(review_id)
             
             # Get additional info
             cur.execute("""

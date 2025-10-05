@@ -1,0 +1,176 @@
+version: "3.8"
+
+services:
+  # Database for Node 1
+  postgres-node1:
+    image: postgres:15
+    environment:
+      POSTGRES_DB: product_review_db
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: password
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data_node1:/var/lib/postgresql/data
+      - ./docs/Schema.sql:/docker-entrypoint-initdb.d/schema.sql
+    networks:
+      - p2p_network
+    container_name: postgres-node1
+
+  # Database for Node 2
+  postgres-node2:
+    image: postgres:15
+    environment:
+      POSTGRES_DB: product_review_db
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: password
+    ports:
+      - "5433:5432"
+    volumes:
+      - postgres_data_node2:/var/lib/postgresql/data
+      - ./docs/Schema.sql:/docker-entrypoint-initdb.d/schema.sql
+    networks:
+      - p2p_network
+    container_name: postgres-node2
+
+  # Database for Node 3
+  postgres-node3:
+    image: postgres:15
+    environment:
+      POSTGRES_DB: product_review_db
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: password
+    ports:
+      - "5434:5432"
+    volumes:
+      - postgres_data_node3:/var/lib/postgresql/data
+      - ./docs/Schema.sql:/docker-entrypoint-initdb.d/schema.sql
+    networks:
+      - p2p_network
+    container_name: postgres-node3
+
+  # Node 1 - Primary API instance
+  api-node1:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    environment:
+      - DATABASE_URL=postgresql://postgres:password@postgres-node1:5432/product_review_db
+      - DB_HOST=postgres-node1
+      - DB_NAME=product_review_db
+      - DB_USER=postgres
+      - DB_PASS=password
+      - DB_PORT=5432
+      - P2P_PORT=8001
+      - API_PORT=8000
+      - DISCOVERY_PORT=8002
+      - NODE_NAME=node1
+      - ENABLE_P2P_SYNC=true
+      - ENABLE_AUTO_DISCOVERY=true
+      - SYNC_INTERVAL=30
+    ports:
+      - "8000:8000" # API port
+      - "8001:8001" # P2P sync port
+      - "8002:8002" # Discovery port
+    depends_on:
+      - postgres-node1
+    networks:
+      - p2p_network
+    volumes:
+      - ./uploads:/app/uploads
+    container_name: api-node1
+
+  # Node 2 - Secondary API instance
+  api-node2:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    environment:
+      - DATABASE_URL=postgresql://postgres:password@postgres-node2:5432/product_review_db
+      - DB_HOST=postgres-node2
+      - DB_NAME=product_review_db
+      - DB_USER=postgres
+      - DB_PASS=password
+      - DB_PORT=5432
+      - P2P_PORT=8003
+      - API_PORT=8010
+      - DISCOVERY_PORT=8004
+      - NODE_NAME=node2
+      - ENABLE_P2P_SYNC=true
+      - ENABLE_AUTO_DISCOVERY=true
+      - SYNC_INTERVAL=30
+    ports:
+      - "8010:8010" # API port
+      - "8003:8003" # P2P sync port
+      - "8004:8004" # Discovery port
+    depends_on:
+      - postgres-node2
+      - api-node1
+    networks:
+      - p2p_network
+    volumes:
+      - ./uploads:/app/uploads
+    container_name: api-node2
+
+  # Node 3 - Third API instance
+  api-node3:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    environment:
+      - DATABASE_URL=postgresql://postgres:password@postgres-node3:5432/product_review_db
+      - DB_HOST=postgres-node3
+      - DB_NAME=product_review_db
+      - DB_USER=postgres
+      - DB_PASS=password
+      - DB_PORT=5432
+      - P2P_PORT=8005
+      - API_PORT=8020
+      - DISCOVERY_PORT=8006
+      - NODE_NAME=node3
+      - ENABLE_P2P_SYNC=true
+      - ENABLE_AUTO_DISCOVERY=true
+      - SYNC_INTERVAL=30
+    ports:
+      - "8020:8020" # API port
+      - "8005:8005" # P2P sync port
+      - "8006:8006" # Discovery port
+    depends_on:
+      - postgres-node3
+      - api-node1
+    networks:
+      - p2p_network
+    volumes:
+      - ./uploads:/app/uploads
+    container_name: api-node3
+
+  # Redis for additional coordination (optional)
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    networks:
+      - p2p_network
+
+  # Monitoring and UI for P2P network
+  p2p-monitor:
+    image: nginx:alpine
+    ports:
+      - "9000:80"
+    volumes:
+      - ./p2p-monitor:/usr/share/nginx/html
+    networks:
+      - p2p_network
+
+networks:
+  p2p_network:
+    driver: bridge
+    ipam:
+      driver: default
+      config:
+        - subnet: 172.20.0.0/16
+
+volumes:
+  postgres_data_node1:
+  postgres_data_node2:
+  postgres_data_node3:

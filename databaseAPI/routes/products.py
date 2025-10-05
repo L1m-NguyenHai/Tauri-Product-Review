@@ -14,6 +14,7 @@ from models.schemas import (
 from auth.security import get_current_admin_user
 from database.connection import get_conn, put_conn
 from psycopg2.extras import RealDictCursor
+from p2p_sync.hooks import p2p_hooks
 import logging
 import uuid
 from decimal import Decimal
@@ -205,7 +206,7 @@ def get_product(product_id: str):
         put_conn(conn)
 
 @router.post("/", response_model=ProductResponse)
-def create_product(
+async def create_product(
     product: ProductCreate
 ):
     """Create new product (no admin required)"""
@@ -239,6 +240,9 @@ def create_product(
             new_product = cur.fetchone()
             conn.commit()
             
+            # Trigger P2P sync after product creation
+            await p2p_hooks.on_product_created(new_product["id"])
+            
             # Get category name
             if new_product["category_id"]:
                 cur.execute("SELECT name FROM categories WHERE id = %s", (str(new_product["category_id"]),))
@@ -257,7 +261,7 @@ def create_product(
         put_conn(conn)
 
 @router.put("/{product_id}", response_model=ProductResponse)
-def update_product(
+async def update_product(
     product_id: str,
     product_update: ProductUpdate,
     current_admin: dict = Depends(get_current_admin_user)
@@ -313,6 +317,9 @@ def update_product(
             cur.execute(query, values)
             updated_product = cur.fetchone()
             conn.commit()
+            
+            # Trigger P2P sync after product update
+            await p2p_hooks.on_product_updated(product_id)
             
             # Get category name
             if updated_product["category_id"]:

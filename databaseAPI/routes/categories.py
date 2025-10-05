@@ -6,6 +6,7 @@ from models.schemas import (
 from auth.security import get_current_admin_user
 from database.connection import get_conn, put_conn
 from psycopg2.extras import RealDictCursor
+from p2p_sync.hooks import p2p_hooks
 import logging
 import uuid
 import re
@@ -153,7 +154,7 @@ def get_category_products(
 
 # Admin routes
 @router.post("/", response_model=CategoryResponse)
-def create_category(
+async def create_category(
     category: CategoryCreate,
     current_admin: dict = Depends(get_current_admin_user)
 ):
@@ -191,6 +192,9 @@ def create_category(
             new_category = cur.fetchone()
             conn.commit()
             
+            # Trigger P2P sync after category creation
+            await p2p_hooks.on_category_created(new_category["id"])
+            
             return new_category
             
     except HTTPException:
@@ -203,7 +207,7 @@ def create_category(
         put_conn(conn)
 
 @router.put("/{category_id}", response_model=CategoryResponse)
-def update_category(
+async def update_category(
     category_id: str,
     category_update: CategoryUpdate,
     current_admin: dict = Depends(get_current_admin_user)
@@ -271,6 +275,9 @@ def update_category(
             cur.execute(query, values)
             updated_category = cur.fetchone()
             conn.commit()
+            
+            # Trigger P2P sync after category update
+            await p2p_hooks.on_category_updated(category_id)
             
             return updated_category
             

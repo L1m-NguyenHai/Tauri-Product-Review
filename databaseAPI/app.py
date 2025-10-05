@@ -8,8 +8,12 @@ from fastapi.staticfiles import StaticFiles
 import time
 import logging
 import os
+from dotenv import load_dotenv
 from database.connection import init_pool, close_pool
 from utils.discord_media import start_discord_bot
+
+# Load environment variables
+load_dotenv()
 
 # Import all routers
 from routes.auth import router as auth_router
@@ -23,6 +27,7 @@ from routes.admin import router as admin_router
 
 from routes.email_verification import email_verification_router
 from routes.activity import router as activity_router
+from routes.p2p_sync import router as p2p_sync_router
 
 from contextlib import asynccontextmanager
 
@@ -40,14 +45,34 @@ async def lifespan(app: FastAPI):
         # Start Discord bot for media upload
         start_discord_bot()
         logger.info("Discord bot started successfully")
+        
+        # Start P2P services
+        from p2p_sync.discovery import peer_discovery
+        from p2p_sync.sync_manager import data_sync_manager
+        
+        await peer_discovery.start_discovery()
+        await data_sync_manager.start_sync_service()
+        logger.info("P2P sync services started successfully")
+        
     except Exception as e:
-        logger.error(f"Failed to initialize database or Discord bot: {e}")
+        logger.error(f"Failed to initialize services: {e}")
         raise
     yield
     # Shutdown code
     try:
         close_pool()
         logger.info("Database connection pool closed successfully")
+        
+        # Stop P2P services
+        try:
+            from p2p_sync.discovery import peer_discovery
+            from p2p_sync.sync_manager import data_sync_manager
+            
+            await peer_discovery.stop_discovery()
+            await data_sync_manager.stop_sync_service()
+            logger.info("P2P sync services stopped successfully")
+        except Exception as e:
+            logger.error(f"Error stopping P2P services: {e}")
         
         # Cleanup Discord resources (if cleanup function exists)
         try:
@@ -63,7 +88,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title="Product Review API",
     description="""
-    A comprehensive FastAPI application for managing product reviews and ratings.
+    A comprehensive FastAPI application for managing product reviews and ratings with P2P synchronization.
     
     ## Features
     
@@ -74,6 +99,15 @@ app = FastAPI(
     * **Review Requests**: Users can request reviews for new products
     * **Contact System**: Contact form submissions and management
     * **Admin Dashboard**: Comprehensive admin panel with analytics and system management
+    * **P2P Synchronization**: Real-time database synchronization between distributed nodes
+    
+    ## P2P Sync Features
+    
+    * **Automatic Peer Discovery**: Automatically discover other nodes on the network
+    * **Real-time Sync**: WebSocket-based real-time data synchronization
+    * **Conflict Resolution**: Intelligent conflict resolution for concurrent updates
+    * **Manual Sync**: Manual trigger for synchronization with specific peers
+    * **Health Monitoring**: Monitor peer health and connection status
     
     ## Authentication
     
@@ -237,6 +271,7 @@ app.include_router(reviews_router, prefix="/api/v1")
 app.include_router(review_requests_router, prefix="/api/v1")
 app.include_router(contact_router, prefix="/api/v1")
 app.include_router(admin_router, prefix="/api/v1")
+app.include_router(p2p_sync_router, prefix="/api/v1")
 
 # Create uploads directory if it doesn't exist
 uploads_dir = os.path.join(os.path.dirname(__file__), "uploads")

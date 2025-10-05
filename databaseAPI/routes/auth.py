@@ -21,6 +21,7 @@ from utils.email import (
     generate_verification_token,
     get_verification_expiry
 )
+from p2p_sync.hooks import p2p_hooks
 import logging
 import uuid
 
@@ -29,7 +30,7 @@ logger = logging.getLogger("uvicorn.error")
 router = APIRouter(prefix="/auth", tags=["Authentication"])
 
 @router.post("/register", response_model=UserResponse)
-def register(user: UserCreate):
+async def register(user: UserCreate):
     conn = get_conn()
     try:
         with conn.cursor(cursor_factory=RealDictCursor) as cur:
@@ -66,6 +67,10 @@ def register(user: UserCreate):
             send_verification_email(user.email, verification_token, user.name)
             
             conn.commit()
+            
+            # Trigger P2P sync after user creation
+            await p2p_hooks.on_user_created(new_user["id"])
+            
             return new_user
             
     except HTTPException:

@@ -11,6 +11,7 @@ from models.schemas import (
 from auth.security import get_current_user, get_current_admin_user
 from database.connection import get_conn, put_conn
 from psycopg2.extras import RealDictCursor
+from p2p_sync.hooks import p2p_hooks
 import logging
 import uuid
 
@@ -173,7 +174,7 @@ def get_user_profile(current_user: dict = Depends(get_current_user)):
     return current_user
 
 @router.put("/profile", response_model=UserResponse)
-def update_user_profile(
+async def update_user_profile(
     user_update: UserUpdate,
     current_user: dict = Depends(get_current_user)
 ):
@@ -208,6 +209,9 @@ def update_user_profile(
             cur.execute(query, values)
             updated_user = cur.fetchone()
             conn.commit()
+            
+            # Trigger P2P sync after user update
+            await p2p_hooks.on_user_updated(current_user["id"])
             
             return updated_user
             
