@@ -4,7 +4,7 @@ from models.schemas import (
     CategoryCreate, CategoryUpdate, CategoryResponse
 )
 from auth.security import get_current_admin_user
-from database.connection import get_conn, put_conn
+from database.connection import get_read_conn, get_write_conn, put_read_conn, put_write_conn, safe_rollback
 from psycopg2.extras import RealDictCursor
 import logging
 import uuid
@@ -26,7 +26,7 @@ def list_categories(
     offset: int = Query(0, ge=0)
 ):
     """Get all categories"""
-    conn = get_conn()
+    conn = get_read_conn()
     try:
         with conn.cursor(cursor_factory=RealDictCursor) as cur:
             cur.execute("""
@@ -41,12 +41,12 @@ def list_categories(
         logger.exception("Error listing categories: %s", e)
         raise HTTPException(status_code=500, detail=str(e))
     finally:
-        put_conn(conn)
+        put_read_conn(conn)
 
 @router.get("/{category_id}", response_model=CategoryResponse)
 def get_category(category_id: str):
     """Get category by ID"""
-    conn = get_conn()
+    conn = get_read_conn()
     try:
         with conn.cursor(cursor_factory=RealDictCursor) as cur:
             cur.execute("SELECT * FROM categories WHERE id = %s", (category_id,))
@@ -66,12 +66,12 @@ def get_category(category_id: str):
         logger.exception("Error getting category: %s", e)
         raise HTTPException(status_code=500, detail=str(e))
     finally:
-        put_conn(conn)
+        put_read_conn(conn)
 
 @router.get("/slug/{slug}", response_model=CategoryResponse)
 def get_category_by_slug(slug: str):
     """Get category by slug"""
-    conn = get_conn()
+    conn = get_read_conn()
     try:
         with conn.cursor(cursor_factory=RealDictCursor) as cur:
             cur.execute("SELECT * FROM categories WHERE slug = %s", (slug,))
@@ -91,7 +91,7 @@ def get_category_by_slug(slug: str):
         logger.exception("Error getting category by slug: %s", e)
         raise HTTPException(status_code=500, detail=str(e))
     finally:
-        put_conn(conn)
+        put_read_conn(conn)
 
 @router.get("/{category_id}/products")
 def get_category_products(
@@ -100,7 +100,7 @@ def get_category_products(
     offset: int = Query(0, ge=0)
 ):
     """Get products in a specific category"""
-    conn = get_conn()
+    conn = get_read_conn()
     try:
         with conn.cursor(cursor_factory=RealDictCursor) as cur:
             # Verify category exists
@@ -149,7 +149,7 @@ def get_category_products(
         logger.exception("Error getting category products: %s", e)
         raise HTTPException(status_code=500, detail=str(e))
     finally:
-        put_conn(conn)
+        put_read_conn(conn)
 
 # Admin routes
 @router.post("/", response_model=CategoryResponse)
@@ -158,7 +158,7 @@ def create_category(
     current_admin: dict = Depends(get_current_admin_user)
 ):
     """Create new category (admin only)"""
-    conn = get_conn()
+    conn = get_write_conn()
     try:
         with conn.cursor(cursor_factory=RealDictCursor) as cur:
             # Check if category name already exists
@@ -196,11 +196,11 @@ def create_category(
     except HTTPException:
         raise
     except Exception as e:
-        conn.rollback()
+        safe_rollback(conn)
         logger.exception("Error creating category: %s", e)
         raise HTTPException(status_code=500, detail=str(e))
     finally:
-        put_conn(conn)
+        put_write_conn(conn)
 
 @router.put("/{category_id}", response_model=CategoryResponse)
 def update_category(
@@ -209,7 +209,7 @@ def update_category(
     current_admin: dict = Depends(get_current_admin_user)
 ):
     """Update category (admin only)"""
-    conn = get_conn()
+    conn = get_write_conn()
     try:
         with conn.cursor(cursor_factory=RealDictCursor) as cur:
             # Check if category exists
@@ -277,11 +277,11 @@ def update_category(
     except HTTPException:
         raise
     except Exception as e:
-        conn.rollback()
+        safe_rollback(conn)
         logger.exception("Error updating category: %s", e)
         raise HTTPException(status_code=500, detail=str(e))
     finally:
-        put_conn(conn)
+        put_write_conn(conn)
 
 @router.delete("/{category_id}")
 def delete_category(
@@ -289,7 +289,7 @@ def delete_category(
     current_admin: dict = Depends(get_current_admin_user)
 ):
     """Delete category (admin only)"""
-    conn = get_conn()
+    conn = get_write_conn()
     try:
         with conn.cursor(cursor_factory=RealDictCursor) as cur:
             # Check if category has products
@@ -321,8 +321,8 @@ def delete_category(
     except HTTPException:
         raise
     except Exception as e:
-        conn.rollback()
+        safe_rollback(conn)
         logger.exception("Error deleting category: %s", e)
         raise HTTPException(status_code=500, detail=str(e))
     finally:
-        put_conn(conn)
+        put_write_conn(conn)

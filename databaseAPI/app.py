@@ -187,9 +187,9 @@ async def health_check():
     """Health check endpoint"""
     try:
         # Test database connection
-        from database.connection import get_conn, put_conn
-        conn = get_conn()
-        put_conn(conn)
+        from database.connection import get_read_conn, put_read_conn
+        conn = get_read_conn()
+        put_read_conn(conn)
         
         return {
             "status": "healthy",

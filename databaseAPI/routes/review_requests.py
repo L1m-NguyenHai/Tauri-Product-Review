@@ -4,7 +4,7 @@ from models.schemas import (
     ReviewRequestCreate, ReviewRequestUpdate, ReviewRequestResponse
 )
 from auth.security import get_current_user, get_current_admin_user
-from database.connection import get_conn, put_conn
+from database.connection import get_read_conn, get_write_conn, put_read_conn, put_write_conn, safe_rollback
 from psycopg2.extras import RealDictCursor
 import logging
 import uuid
@@ -21,7 +21,7 @@ def list_review_requests(
     status: Optional[str] = Query(None)
 ):
     """List user's review requests"""
-    conn = get_conn()
+    conn = get_read_conn()
     try:
         with conn.cursor(cursor_factory=RealDictCursor) as cur:
             where_conditions = ["rr.user_id = %s"]
@@ -53,7 +53,7 @@ def list_review_requests(
         logger.exception("Error listing review requests: %s", e)
         raise HTTPException(status_code=500, detail=str(e))
     finally:
-        put_conn(conn)
+        put_read_conn(conn)
 
 @router.get("/{request_id}", response_model=ReviewRequestResponse)
 def get_review_request(
@@ -61,7 +61,7 @@ def get_review_request(
     current_user: dict = Depends(get_current_user)
 ):
     """Get review request details"""
-    conn = get_conn()
+    conn = get_read_conn()
     try:
         with conn.cursor(cursor_factory=RealDictCursor) as cur:
             cur.execute("""
@@ -97,7 +97,7 @@ def get_review_request(
         logger.exception("Error getting review request: %s", e)
         raise HTTPException(status_code=500, detail=str(e))
     finally:
-        put_conn(conn)
+        put_read_conn(conn)
 
 @router.post("/", response_model=ReviewRequestResponse)
 def create_review_request(
@@ -105,7 +105,7 @@ def create_review_request(
     current_user: dict = Depends(get_current_user)
 ):
     """Submit new review request"""
-    conn = get_conn()
+    conn = get_write_conn()
     try:
         with conn.cursor(cursor_factory=RealDictCursor) as cur:
             # Verify category exists if provided
@@ -154,11 +154,11 @@ def create_review_request(
     except HTTPException:
         raise
     except Exception as e:
-        conn.rollback()
+        safe_rollback(conn)
         logger.exception("Error creating review request: %s", e)
         raise HTTPException(status_code=500, detail=str(e))
     finally:
-        put_conn(conn)
+        put_write_conn(conn)
 
 @router.put("/{request_id}", response_model=ReviewRequestResponse)
 def update_review_request(
@@ -167,7 +167,7 @@ def update_review_request(
     current_user: dict = Depends(get_current_user)
 ):
     """Update review request (only if pending)"""
-    conn = get_conn()
+    conn = get_write_conn()
     try:
         with conn.cursor(cursor_factory=RealDictCursor) as cur:
             # Get existing request
@@ -241,11 +241,11 @@ def update_review_request(
     except HTTPException:
         raise
     except Exception as e:
-        conn.rollback()
+        safe_rollback(conn)
         logger.exception("Error updating review request: %s", e)
         raise HTTPException(status_code=500, detail=str(e))
     finally:
-        put_conn(conn)
+        put_write_conn(conn)
 
 @router.delete("/{request_id}")
 def delete_review_request(
@@ -253,7 +253,7 @@ def delete_review_request(
     current_user: dict = Depends(get_current_user)
 ):
     """Delete review request (only if pending)"""
-    conn = get_conn()
+    conn = get_write_conn()
     try:
         with conn.cursor(cursor_factory=RealDictCursor) as cur:
             # Get existing request
@@ -288,11 +288,11 @@ def delete_review_request(
     except HTTPException:
         raise
     except Exception as e:
-        conn.rollback()
+        safe_rollback(conn)
         logger.exception("Error deleting review request: %s", e)
         raise HTTPException(status_code=500, detail=str(e))
     finally:
-        put_conn(conn)
+        put_write_conn(conn)
 
 # Admin routes
 @router.get("/admin/all", response_model=List[ReviewRequestResponse])
@@ -303,7 +303,7 @@ def list_all_review_requests(
     status: Optional[str] = Query(None)
 ):
     """List all review requests (admin only)"""
-    conn = get_conn()
+    conn = get_read_conn()
     try:
         with conn.cursor(cursor_factory=RealDictCursor) as cur:
             where_conditions = []
@@ -338,7 +338,7 @@ def list_all_review_requests(
         logger.exception("Error listing all review requests: %s", e)
         raise HTTPException(status_code=500, detail=str(e))
     finally:
-        put_conn(conn)
+        put_read_conn(conn)
 
 @router.get("/admin/pending", response_model=List[ReviewRequestResponse])
 def list_pending_review_requests(
@@ -347,7 +347,7 @@ def list_pending_review_requests(
     offset: int = Query(0, ge=0)
 ):
     """List pending review requests (admin only)"""
-    conn = get_conn()
+    conn = get_read_conn()
     try:
         with conn.cursor(cursor_factory=RealDictCursor) as cur:
             cur.execute("""
@@ -369,7 +369,7 @@ def list_pending_review_requests(
         logger.exception("Error listing pending review requests: %s", e)
         raise HTTPException(status_code=500, detail=str(e))
     finally:
-        put_conn(conn)
+        put_read_conn(conn)
 
 @router.put("/admin/{request_id}/approve")
 def approve_review_request(
@@ -377,7 +377,7 @@ def approve_review_request(
     current_admin: dict = Depends(get_current_admin_user)
 ):
     """Approve review request (admin only)"""
-    conn = get_conn()
+    conn = get_write_conn()
     try:
         with conn.cursor(cursor_factory=RealDictCursor) as cur:
             cur.execute("""
@@ -400,11 +400,11 @@ def approve_review_request(
     except HTTPException:
         raise
     except Exception as e:
-        conn.rollback()
+        safe_rollback(conn)
         logger.exception("Error approving review request: %s", e)
         raise HTTPException(status_code=500, detail=str(e))
     finally:
-        put_conn(conn)
+        put_write_conn(conn)
 
 @router.put("/admin/{request_id}/reject")
 def reject_review_request(
@@ -413,7 +413,7 @@ def reject_review_request(
     current_admin: dict = Depends(get_current_admin_user)
 ):
     """Reject review request with admin notes (admin only)"""
-    conn = get_conn()
+    conn = get_write_conn()
     try:
         with conn.cursor(cursor_factory=RealDictCursor) as cur:
             cur.execute("""
@@ -436,11 +436,11 @@ def reject_review_request(
     except HTTPException:
         raise
     except Exception as e:
-        conn.rollback()
+        safe_rollback(conn)
         logger.exception("Error rejecting review request: %s", e)
         raise HTTPException(status_code=500, detail=str(e))
     finally:
-        put_conn(conn)
+        put_write_conn(conn)
 
 @router.put("/admin/{request_id}/complete")
 def complete_review_request(
@@ -449,7 +449,7 @@ def complete_review_request(
     current_admin: dict = Depends(get_current_admin_user)
 ):
     """Mark review request as completed (admin only)"""
-    conn = get_conn()
+    conn = get_write_conn()
     try:
         with conn.cursor(cursor_factory=RealDictCursor) as cur:
             cur.execute("""
@@ -472,11 +472,11 @@ def complete_review_request(
     except HTTPException:
         raise
     except Exception as e:
-        conn.rollback()
+        safe_rollback(conn)
         logger.exception("Error completing review request: %s", e)
         raise HTTPException(status_code=500, detail=str(e))
     finally:
-        put_conn(conn)
+        put_write_conn(conn)
 
 @router.put("/admin/{request_id}/notes")
 def update_admin_notes(
@@ -485,7 +485,7 @@ def update_admin_notes(
     current_admin: dict = Depends(get_current_admin_user)
 ):
     """Update admin notes for review request (admin only)"""
-    conn = get_conn()
+    conn = get_write_conn()
     try:
         with conn.cursor(cursor_factory=RealDictCursor) as cur:
             cur.execute("""
@@ -508,8 +508,8 @@ def update_admin_notes(
     except HTTPException:
         raise
     except Exception as e:
-        conn.rollback()
+        safe_rollback(conn)
         logger.exception("Error updating admin notes: %s", e)
         raise HTTPException(status_code=500, detail=str(e))
     finally:
-        put_conn(conn)
+        put_write_conn(conn)

@@ -13,7 +13,7 @@ from auth.security import (
     get_current_user,
     ACCESS_TOKEN_EXPIRE_MINUTES
 )
-from database.connection import get_conn, put_conn
+from database.connection import get_read_conn, get_write_conn, put_read_conn, put_write_conn, safe_rollback
 from psycopg2.extras import RealDictCursor
 from utils.email import (
     send_verification_email, 
@@ -30,7 +30,7 @@ router = APIRouter(prefix="/auth", tags=["Authentication"])
 
 @router.post("/register", response_model=UserResponse)
 def register(user: UserCreate):
-    conn = get_conn()
+    conn = get_write_conn()
     try:
         with conn.cursor(cursor_factory=RealDictCursor) as cur:
             # Check if user already exists
@@ -71,11 +71,11 @@ def register(user: UserCreate):
     except HTTPException:
         raise
     except Exception as e:
-        conn.rollback()
+        safe_rollback(conn)
         logger.exception("Error creating user: %s", e)
         raise HTTPException(status_code=500, detail=str(e))
     finally:
-        put_conn(conn)
+        put_write_conn(conn)
 
 @router.post("/login", response_model=Token)
 def login(user: UserLogin):
@@ -155,7 +155,7 @@ def logout_server(current_user: dict = Depends(get_current_user)):
     This adds the current token to a blacklist in the database.
     Requires implementing token blacklist checking in the auth middleware.
     """
-    conn = get_conn()
+    conn = get_write_conn()
     try:
         with conn.cursor(cursor_factory=RealDictCursor) as cur:
             # Get the current token from the request
@@ -184,7 +184,7 @@ def logout_server(current_user: dict = Depends(get_current_user)):
             }
             
     except Exception as e:
-        conn.rollback()
+        safe_rollback(conn)
         logger.exception("Error during server logout: %s", e)
         # Even if server logout fails, client should still logout
         return {
@@ -196,17 +196,14 @@ def logout_server(current_user: dict = Depends(get_current_user)):
             }
         }
     finally:
-        put_conn(conn)
-
-@router.post("/logout-all")
-def logout_all_devices(current_user: dict = Depends(get_current_user)):
+        put_write_conn(conn)
     """
     Logout from all devices
     
     This invalidates all sessions for the current user.
     Useful for security purposes when account is compromised.
     """
-    conn = get_conn()
+    conn = get_write_conn()
     try:
         with conn.cursor(cursor_factory=RealDictCursor) as cur:
             # Record the logout-all action
@@ -238,18 +235,18 @@ def logout_all_devices(current_user: dict = Depends(get_current_user)):
             }
             
     except Exception as e:
-        conn.rollback()
+        safe_rollback(conn)
         logger.exception("Error during logout all: %s", e)
         raise HTTPException(status_code=500, detail="Logout failed")
     finally:
-        put_conn(conn)
+        put_write_conn(conn)
 
 @router.post("/send-verification")
 def send_verification(request: EmailVerificationRequest):
     """
     Send email verification to registered user
     """
-    conn = get_conn()
+    conn = get_write_conn()
     try:
         with conn.cursor(cursor_factory=RealDictCursor) as cur:
             # Check if user exists and is not already verified
@@ -298,11 +295,11 @@ def send_verification(request: EmailVerificationRequest):
     except HTTPException:
         raise
     except Exception as e:
-        conn.rollback()
+        safe_rollback(conn)
         logger.exception("Error sending verification email: %s", e)
         raise HTTPException(status_code=500, detail="Failed to send verification email")
     finally:
-        put_conn(conn)
+        put_write_conn(conn)
 
 @router.get("/verify-email", response_class=HTMLResponse)
 def verify_email_get(token: str):
@@ -344,7 +341,7 @@ def verify_email_post(request: EmailVerificationConfirm):
     """
     Verify user email with token
     """
-    conn = get_conn()
+    conn = get_write_conn()
     try:
         with conn.cursor(cursor_factory=RealDictCursor) as cur:
             # Find user with matching verification token
@@ -398,18 +395,18 @@ def verify_email_post(request: EmailVerificationConfirm):
     except HTTPException:
         raise
     except Exception as e:
-        conn.rollback()
+        safe_rollback(conn)
         logger.exception("Error verifying email: %s", e)
         raise HTTPException(status_code=500, detail="Failed to verify email")
     finally:
-        put_conn(conn)
+        put_write_conn(conn)
 
 @router.post("/check-email-verification")
 def check_email_verification(request: EmailVerificationRequest):
     """
     Check if an email address is verified
     """
-    conn = get_conn()
+    conn = get_read_conn()
     try:
         with conn.cursor(cursor_factory=RealDictCursor) as cur:
             # Find user by email
@@ -438,4 +435,4 @@ def check_email_verification(request: EmailVerificationRequest):
         logger.exception("Error checking email verification: %s", e)
         raise HTTPException(status_code=500, detail="Failed to check email verification")
     finally:
-        put_conn(conn)
+        put_read_conn(conn)

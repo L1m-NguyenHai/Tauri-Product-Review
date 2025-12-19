@@ -27,6 +27,10 @@ export const useAuth = () => {
   return context;
 };
 
+const USER_CACHE_KEY = "cached_user_data";
+const USER_CACHE_TIMESTAMP_KEY = "cached_user_timestamp";
+const USER_CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
   children,
 }) => {
@@ -40,13 +44,55 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
 
       if (token && tokenType) {
         try {
+          // Try to get user from cache first
+          const cachedUser = localStorage.getItem(USER_CACHE_KEY);
+          const cachedTimestamp = localStorage.getItem(
+            USER_CACHE_TIMESTAMP_KEY
+          );
+
+          if (cachedUser && cachedTimestamp) {
+            const age = Date.now() - parseInt(cachedTimestamp, 10);
+
+            // Use cached data if it's fresh (less than TTL)
+            if (age < USER_CACHE_TTL) {
+              setUser(JSON.parse(cachedUser));
+
+              // Silently refresh user data in background
+              authAPI
+                .getMe()
+                .then((userData) => {
+                  setUser(userData);
+                  localStorage.setItem(
+                    USER_CACHE_KEY,
+                    JSON.stringify(userData)
+                  );
+                  localStorage.setItem(
+                    USER_CACHE_TIMESTAMP_KEY,
+                    Date.now().toString()
+                  );
+                })
+                .catch((err) =>
+                  console.error("Background user refresh failed:", err)
+                );
+
+              return; // Use cached data for now
+            }
+          }
+
+          // No cache or expired - fetch fresh data
           const userData = await authAPI.getMe();
           setUser(userData);
+
+          // Cache the user data
+          localStorage.setItem(USER_CACHE_KEY, JSON.stringify(userData));
+          localStorage.setItem(USER_CACHE_TIMESTAMP_KEY, Date.now().toString());
         } catch (error) {
           console.error("Failed to restore user session:", error);
-          // Clear invalid tokens
+          // Clear invalid tokens and cache
           localStorage.removeItem("access_token");
           localStorage.removeItem("token_type");
+          localStorage.removeItem(USER_CACHE_KEY);
+          localStorage.removeItem(USER_CACHE_TIMESTAMP_KEY);
         }
       }
     };
@@ -72,6 +118,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
 
         // Update the user state with the fetched details
         setUser(userData);
+
+        // Cache user data
+        localStorage.setItem(USER_CACHE_KEY, JSON.stringify(userData));
+        localStorage.setItem(USER_CACHE_TIMESTAMP_KEY, Date.now().toString());
 
         return true;
       } catch (error: any) {
@@ -118,6 +168,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
     setUser(null);
     localStorage.removeItem("access_token");
     localStorage.removeItem("token_type");
+    localStorage.removeItem(USER_CACHE_KEY);
+    localStorage.removeItem(USER_CACHE_TIMESTAMP_KEY);
   }, []);
 
   const refreshUser = useCallback(async (): Promise<void> => {
@@ -128,6 +180,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
       try {
         const userData = await authAPI.getMe();
         setUser(userData);
+
+        // Update cache
+        localStorage.setItem(USER_CACHE_KEY, JSON.stringify(userData));
+        localStorage.setItem(USER_CACHE_TIMESTAMP_KEY, Date.now().toString());
       } catch (error) {
         console.error("Failed to refresh user data:", error);
         // Don't clear tokens on refresh failure, user might just be offline

@@ -12,7 +12,7 @@ from models.schemas import (
     PaginatedProductsResponse
 )
 from auth.security import get_current_admin_user
-from database.connection import get_conn, put_conn
+from database.connection import get_read_conn, get_write_conn, put_read_conn, put_write_conn, safe_rollback
 from psycopg2.extras import RealDictCursor
 import logging
 import uuid
@@ -37,7 +37,7 @@ def list_products(
     search: Optional[str] = Query(None)
 ):
     """List products with filtering and sorting"""
-    conn = get_conn()
+    conn = get_read_conn()
     try:
         with conn.cursor(cursor_factory=RealDictCursor) as cur:
             # Build WHERE clause
@@ -131,12 +131,12 @@ def list_products(
         logger.exception("Error listing products: %s", e)
         raise HTTPException(status_code=500, detail=str(e))
     finally:
-        put_conn(conn)
+        put_read_conn(conn)
 
 @router.get("/{product_id}", response_model=dict)
 def get_product(product_id: str):
     """Get detailed product information including features, images, specs, and store links"""
-    conn = get_conn()
+    conn = get_read_conn()
     try:
         with conn.cursor(cursor_factory=RealDictCursor) as cur:
             # Get product details
@@ -202,14 +202,14 @@ def get_product(product_id: str):
         logger.exception("Error getting product %s: %s", product_id, e)
         raise HTTPException(status_code=500, detail=str(e))
     finally:
-        put_conn(conn)
+        put_read_conn(conn)
 
 @router.post("/", response_model=ProductResponse)
 def create_product(
     product: ProductCreate
 ):
     """Create new product (no admin required)"""
-    conn = get_conn()
+    conn = get_write_conn()
     try:
         with conn.cursor(cursor_factory=RealDictCursor) as cur:
             # Verify category exists if provided
@@ -250,11 +250,11 @@ def create_product(
     except HTTPException:
         raise
     except Exception as e:
-        conn.rollback()
+        safe_rollback(conn)
         logger.exception("Error creating product: %s", e)
         raise HTTPException(status_code=500, detail=str(e))
     finally:
-        put_conn(conn)
+        put_write_conn(conn)
 
 @router.put("/{product_id}", response_model=ProductResponse)
 def update_product(
@@ -263,7 +263,7 @@ def update_product(
     current_admin: dict = Depends(get_current_admin_user)
 ):
     """Update product (admin only)"""
-    conn = get_conn()
+    conn = get_write_conn()
     try:
         with conn.cursor(cursor_factory=RealDictCursor) as cur:
             # Check if product exists
@@ -325,11 +325,11 @@ def update_product(
     except HTTPException:
         raise
     except Exception as e:
-        conn.rollback()
+        safe_rollback(conn)
         logger.exception("Error updating product: %s", e)
         raise HTTPException(status_code=500, detail=str(e))
     finally:
-        put_conn(conn)
+        put_write_conn(conn)
 
 @router.delete("/{product_id}")
 def delete_product(
@@ -337,7 +337,7 @@ def delete_product(
     current_admin: dict = Depends(get_current_admin_user)
 ):
     """Delete product (admin only)"""
-    conn = get_conn()
+    conn = get_write_conn()
     try:
         with conn.cursor(cursor_factory=RealDictCursor) as cur:
             cur.execute("DELETE FROM products WHERE id = %s RETURNING id", (product_id,))
@@ -355,11 +355,11 @@ def delete_product(
     except HTTPException:
         raise
     except Exception as e:
-        conn.rollback()
+        safe_rollback(conn)
         logger.exception("Error deleting product: %s", e)
         raise HTTPException(status_code=500, detail=str(e))
     finally:
-        put_conn(conn)
+        put_write_conn(conn)
 
 # Product Features
 @router.post("/{product_id}/features", response_model=ProductFeatureResponse)
@@ -369,7 +369,7 @@ def add_product_feature(
     current_admin: dict = Depends(get_current_admin_user)
 ):
     """Add feature to product (admin only)"""
-    conn = get_conn()
+    conn = get_write_conn()
     try:
         with conn.cursor(cursor_factory=RealDictCursor) as cur:
             # Verify product exists
@@ -394,11 +394,11 @@ def add_product_feature(
     except HTTPException:
         raise
     except Exception as e:
-        conn.rollback()
+        safe_rollback(conn)
         logger.exception("Error adding product feature: %s", e)
         raise HTTPException(status_code=500, detail=str(e))
     finally:
-        put_conn(conn)
+        put_write_conn(conn)
 
 @router.delete("/features/{feature_id}")
 def delete_product_feature(
@@ -406,7 +406,7 @@ def delete_product_feature(
     current_admin: dict = Depends(get_current_admin_user)
 ):
     """Delete product feature (admin only)"""
-    conn = get_conn()
+    conn = get_write_conn()
     try:
         with conn.cursor(cursor_factory=RealDictCursor) as cur:
             cur.execute("DELETE FROM product_features WHERE id = %s RETURNING id", (feature_id,))
@@ -424,11 +424,11 @@ def delete_product_feature(
     except HTTPException:
         raise
     except Exception as e:
-        conn.rollback()
+        safe_rollback(conn)
         logger.exception("Error deleting feature: %s", e)
         raise HTTPException(status_code=500, detail=str(e))
     finally:
-        put_conn(conn)
+        put_write_conn(conn)
 
 # Product Images
 @router.post("/{product_id}/images/upload")
@@ -439,7 +439,7 @@ async def upload_product_image(
     sort_order: int = Form(0)
 ):
     """Upload image file for product (supports Discord upload)"""
-    conn = get_conn()
+    conn = get_write_conn()
     try:
         with conn.cursor(cursor_factory=RealDictCursor) as cur:
             # Verify product exists
@@ -511,11 +511,11 @@ async def upload_product_image(
     except HTTPException:
         raise
     except Exception as e:
-        conn.rollback()
+        safe_rollback(conn)
         logger.exception("Error uploading product image: %s", e)
         raise HTTPException(status_code=500, detail=str(e))
     finally:
-        put_conn(conn)
+        put_write_conn(conn)
 
 @router.post("/{product_id}/images", response_model=ProductImageResponse)
 def add_product_image(
@@ -523,7 +523,7 @@ def add_product_image(
     image: ProductImageCreate
 ):
     """Add image to product via URL (no admin required)"""
-    conn = get_conn()
+    conn = get_write_conn()
     try:
         with conn.cursor(cursor_factory=RealDictCursor) as cur:
             # Verify product exists
@@ -556,11 +556,11 @@ def add_product_image(
     except HTTPException:
         raise
     except Exception as e:
-        conn.rollback()
+        safe_rollback(conn)
         logger.exception("Error adding product image: %s", e)
         raise HTTPException(status_code=500, detail=str(e))
     finally:
-        put_conn(conn)
+        put_write_conn(conn)
 
 @router.delete("/images/{image_id}")
 def delete_product_image(
@@ -568,7 +568,7 @@ def delete_product_image(
     current_admin: dict = Depends(get_current_admin_user)
 ):
     """Delete product image (admin only)"""
-    conn = get_conn()
+    conn = get_write_conn()
     try:
         with conn.cursor(cursor_factory=RealDictCursor) as cur:
             cur.execute("DELETE FROM product_images WHERE id = %s RETURNING id", (image_id,))
@@ -586,11 +586,11 @@ def delete_product_image(
     except HTTPException:
         raise
     except Exception as e:
-        conn.rollback()
+        safe_rollback(conn)
         logger.exception("Error deleting image: %s", e)
         raise HTTPException(status_code=500, detail=str(e))
     finally:
-        put_conn(conn)
+        put_write_conn(conn)
 
 # Product Specifications
 @router.post("/{product_id}/specifications", response_model=ProductSpecificationResponse)
@@ -600,7 +600,7 @@ def add_product_specification(
     current_admin: dict = Depends(get_current_admin_user)
 ):
     """Add specification to product (admin only)"""
-    conn = get_conn()
+    conn = get_write_conn()
     try:
         with conn.cursor(cursor_factory=RealDictCursor) as cur:
             # Verify product exists
@@ -625,11 +625,11 @@ def add_product_specification(
     except HTTPException:
         raise
     except Exception as e:
-        conn.rollback()
+        safe_rollback(conn)
         logger.exception("Error adding product specification: %s", e)
         raise HTTPException(status_code=500, detail=str(e))
     finally:
-        put_conn(conn)
+        put_write_conn(conn)
 
 @router.delete("/specifications/{spec_id}")
 def delete_product_specification(
@@ -637,7 +637,7 @@ def delete_product_specification(
     current_admin: dict = Depends(get_current_admin_user)
 ):
     """Delete product specification (admin only)"""
-    conn = get_conn()
+    conn = get_write_conn()
     try:
         with conn.cursor(cursor_factory=RealDictCursor) as cur:
             cur.execute("DELETE FROM product_specifications WHERE id = %s RETURNING id", (spec_id,))
@@ -655,11 +655,11 @@ def delete_product_specification(
     except HTTPException:
         raise
     except Exception as e:
-        conn.rollback()
+        safe_rollback(conn)
         logger.exception("Error deleting specification: %s", e)
         raise HTTPException(status_code=500, detail=str(e))
     finally:
-        put_conn(conn)
+        put_write_conn(conn)
 
 # Store Links
 @router.post("/{product_id}/store-links", response_model=StoreLinkResponse)
@@ -669,7 +669,7 @@ def add_store_link(
     current_admin: dict = Depends(get_current_admin_user)
 ):
     """Add store link to product (admin only)"""
-    conn = get_conn()
+    conn = get_write_conn()
     try:
         with conn.cursor(cursor_factory=RealDictCursor) as cur:
             # Verify product exists
@@ -695,11 +695,11 @@ def add_store_link(
     except HTTPException:
         raise
     except Exception as e:
-        conn.rollback()
+        safe_rollback(conn)
         logger.exception("Error adding store link: %s", e)
         raise HTTPException(status_code=500, detail=str(e))
     finally:
-        put_conn(conn)
+        put_write_conn(conn)
 
 @router.delete("/store-links/{link_id}")
 def delete_store_link(
@@ -707,7 +707,7 @@ def delete_store_link(
     current_admin: dict = Depends(get_current_admin_user)
 ):
     """Delete store link (admin only)"""
-    conn = get_conn()
+    conn = get_write_conn()
     try:
         with conn.cursor(cursor_factory=RealDictCursor) as cur:
             cur.execute("DELETE FROM store_links WHERE id = %s RETURNING id", (link_id,))
@@ -725,8 +725,8 @@ def delete_store_link(
     except HTTPException:
         raise
     except Exception as e:
-        conn.rollback()
+        safe_rollback(conn)
         logger.exception("Error deleting store link: %s", e)
         raise HTTPException(status_code=500, detail=str(e))
     finally:
-        put_conn(conn)
+        put_write_conn(conn)

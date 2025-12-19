@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo, useCallback } from "react";
 import { Link } from "react-router-dom";
+import { useQuery } from "@tanstack/react-query";
 import { publicAPI } from "../services/api";
 import { useTheme } from "../contexts/ThemeContext";
 import ProductCard from "../components/ProductCard";
@@ -62,53 +63,46 @@ const ProductList: React.FC<ProductListProps> = ({
   setCurrentPage,
 }) => {
   const { isDark } = useTheme();
-  const [products, setProducts] = useState<any[]>([]);
-  const [loading, setLoading] = useState<boolean>(true);
-  const [totalPages, setTotalPages] = useState<number>(1);
   const productsPerPage = 8;
 
   // Debounce search query to reduce API calls
   const debouncedSearchQuery = useDebounce(searchQuery, 300);
 
-  // Memoize fetch function to prevent unnecessary recreations
-  const fetchProducts = useCallback(async () => {
-    setLoading(true);
-    try {
-      // Convert sortBy to API format
-      const apiSortBy =
-        sortBy === "rating"
-          ? "average_rating"
-          : sortBy === "created_at"
-          ? "created_at"
-          : sortBy;
-      const response = await publicAPI.getProducts({
+  // Convert sortBy to API format
+  const apiSortBy =
+    sortBy === "rating"
+      ? "average_rating"
+      : sortBy === "created_at"
+      ? "created_at"
+      : sortBy;
+
+  // Fetch products with React Query (automatic caching, deduplication)
+  const { data: productsData, isLoading: loading } = useQuery({
+    queryKey: [
+      "products",
+      "list",
+      {
+        search: debouncedSearchQuery,
+        category: selectedCategory,
+        sortBy: apiSortBy,
+        page: currentPage,
+      },
+    ],
+    queryFn: () =>
+      publicAPI.getProducts({
         search: debouncedSearchQuery,
         category_id: selectedCategory !== "all" ? selectedCategory : undefined,
         sort_by: apiSortBy,
-        sort_order: sortBy === "created_at" ? "desc" : "desc", // newest first, others desc by default
+        sort_order: sortBy === "created_at" ? "desc" : "desc",
         limit: productsPerPage,
         offset: (currentPage - 1) * productsPerPage,
-      });
-      setProducts(response.items);
-      // Calculate total pages based on total count
-      const totalCount = response.total || 0;
-      setTotalPages(Math.ceil(totalCount / productsPerPage));
-    } catch (error) {
-      console.error("Error fetching products:", error);
-    } finally {
-      setLoading(false);
-    }
-  }, [
-    debouncedSearchQuery,
-    selectedCategory,
-    sortBy,
-    currentPage,
-    productsPerPage,
-  ]);
+      }),
+    staleTime: 2 * 60 * 1000, // 2 minutes
+    placeholderData: (previousData) => previousData, // Keep previous data while fetching
+  });
 
-  useEffect(() => {
-    fetchProducts();
-  }, [fetchProducts]);
+  const products = productsData?.items || [];
+  const totalPages = Math.ceil((productsData?.total || 0) / productsPerPage);
 
   // Memoize ProductListItem component to prevent unnecessary re-renders
   const ProductListItem = React.memo(({ product }: { product: any }) => {

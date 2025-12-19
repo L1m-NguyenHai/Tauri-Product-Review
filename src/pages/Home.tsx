@@ -1,24 +1,53 @@
 import React, { useState, useEffect } from "react";
 import { Link } from "react-router-dom";
 import { Star, TrendingUp, Users, Award } from "lucide-react";
+import { useQuery } from "@tanstack/react-query";
 import { useTheme } from "../contexts/ThemeContext";
+import { useCategories } from "../contexts/CategoriesContext";
 import ProductCard from "../components/ProductCard";
 import { publicAPI } from "../services/api";
 
 const Home: React.FC = () => {
   const { isDark } = useTheme();
 
-  // State for API data
-  const [latestProducts, setLatestProducts] = useState<any[]>([]);
-  const [highestRatedProduct, setHighestRatedProduct] = useState<any>(null);
-  const [categories, setCategories] = useState<any[]>([]);
+  // Use shared categories from context
+  const { categories: allCategories } = useCategories();
+  const categories = allCategories.slice(0, 5); // Limit to 5 categories
+
+  // Fetch latest products with React Query
+  const { data: latestProductsData } = useQuery({
+    queryKey: ["products", "latest", { limit: 4 }],
+    queryFn: () =>
+      publicAPI.getProducts({
+        limit: 4,
+        sort_by: "created_at",
+        sort_order: "desc",
+      }),
+    staleTime: 2 * 60 * 1000, // 2 minutes
+  });
+
+  // Fetch highest rated product with React Query
+  const { data: highestRatedData } = useQuery({
+    queryKey: ["products", "highest-rated", { limit: 1 }],
+    queryFn: () =>
+      publicAPI.getProducts({
+        limit: 1,
+        sort_by: "average_rating",
+        sort_order: "desc",
+      }),
+    staleTime: 5 * 60 * 1000, // 5 minutes
+  });
+
+  const latestProducts = latestProductsData?.items || [];
+  const highestRatedProduct = highestRatedData?.items?.[0] || null;
+  const loading = !latestProductsData && !highestRatedData;
+
   const [stats, setStats] = useState({
     totalReviews: "0",
     productsReviewed: "0",
     activeUsers: "0",
     expertReviewers: "0",
   });
-  const [loading, setLoading] = useState(true);
 
   // Utility function to format price
   const formatPrice = (price: number | string): string => {
@@ -34,59 +63,17 @@ const Home: React.FC = () => {
     );
   };
 
-  // Fetch data from APIs
+  // Update stats when data is loaded
   useEffect(() => {
-    const fetchData = async () => {
-      try {
-        setLoading(true);
-
-        // Fetch latest products (products with few or no reviews)
-        const latestResponse = await publicAPI.getProducts({
-          limit: 4,
-          sort_by: "created_at",
-          sort_order: "desc",
-        });
-
-        // Fetch highest rated product for hero section
-        const highestRatedResponse = await publicAPI.getProducts({
-          limit: 1,
-          sort_by: "average_rating",
-          sort_order: "desc",
-        });
-
-        // Fetch categories
-        const categoriesResponse = await publicAPI.getCategories();
-
-        // Debug: Log API responses
-        console.log("Latest products response:", latestResponse);
-        console.log("Highest rated response:", highestRatedResponse);
-        console.log("Categories response:", categoriesResponse);
-
-        // Set the data
-        setLatestProducts(latestResponse.items || []);
-        setHighestRatedProduct(highestRatedResponse.items?.[0] || null);
-        setCategories(categoriesResponse.slice(0, 5) || []); // Limit to 5 categories
-
-        // For stats, we'll use static data for now but you can create endpoints for these
-        setStats({
-          totalReviews: "15,234",
-          productsReviewed: latestResponse.total?.toString() || "0",
-          activeUsers: "45,678",
-          expertReviewers: "234",
-        });
-      } catch (error) {
-        console.error("Error fetching data:", error);
-        // Fallback to empty arrays/objects on error
-        setLatestProducts([]);
-        setHighestRatedProduct(null);
-        setCategories([]);
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    fetchData();
-  }, []);
+    if (latestProductsData) {
+      setStats({
+        totalReviews: "15,234",
+        productsReviewed: latestProductsData.total?.toString() || "0",
+        activeUsers: "45,678",
+        expertReviewers: "234",
+      });
+    }
+  }, [latestProductsData]);
 
   // Category icon mapping
   const getCategoryIcon = (categoryName: string) => {

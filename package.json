@@ -10,6 +10,8 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@tanstack/react-query": "^5.90.12",
+    "@tanstack/react-query-devtools": "^5.91.1",
     "@types/react-router-dom": "^5.3.3",
     "axios": "^1.11.0",
     "lucide-react": "^0.344.0",

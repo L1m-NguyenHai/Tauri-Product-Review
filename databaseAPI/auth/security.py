@@ -4,7 +4,6 @@ from jose import JWTError, jwt
 from passlib.context import CryptContext
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-from database.connection import get_conn, put_conn
 from psycopg2.extras import RealDictCursor
 import os
 
@@ -36,6 +35,8 @@ def create_access_token(data: dict, expires_delta: Optional[timedelta] = None):
     return encoded_jwt
 
 def verify_token(credentials: HTTPAuthorizationCredentials = Depends(security)):
+    from database.connection import get_read_conn, put_read_conn
+    
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
         detail="Could not validate credentials",
@@ -49,17 +50,28 @@ def verify_token(credentials: HTTPAuthorizationCredentials = Depends(security)):
     except JWTError:
         raise credentials_exception
     
-    # Get user from database
-    conn = get_conn()
+    # Get user from database using read connection
+    conn = None
     try:
+        conn = get_read_conn()
         with conn.cursor(cursor_factory=RealDictCursor) as cur:
             cur.execute("SELECT * FROM users WHERE email = %s", (email,))
             user = cur.fetchone()
             if user is None:
                 raise credentials_exception
             return user
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger = __import__('logging').getLogger("uvicorn.error")
+        logger.exception("Database error in verify_token: %s", e)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Database connection error"
+        )
     finally:
-        put_conn(conn)
+        if conn:
+            put_read_conn(conn)
 
 def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security)):
     return verify_token(credentials)
@@ -73,8 +85,13 @@ def get_current_admin_user(current_user: dict = Depends(get_current_user)):
     return current_user
 
 def authenticate_user(email: str, password: str):
-    conn = get_conn()
+    from database.connection import get_read_conn, put_read_conn
+    import logging
+    logger = logging.getLogger("uvicorn.error")
+    
+    conn = None
     try:
+        conn = get_read_conn()
         with conn.cursor(cursor_factory=RealDictCursor) as cur:
             cur.execute("SELECT * FROM users WHERE email = %s", (email,))
             user = cur.fetchone()
@@ -83,5 +100,9 @@ def authenticate_user(email: str, password: str):
             if not verify_password(password, user["password_hash"]):
                 return False
             return user
+    except Exception as e:
+        logger.exception("Database error in authenticate_user: %s", e)
+        return False
     finally:
-        put_conn(conn)
+        if conn:
+            put_read_conn(conn)

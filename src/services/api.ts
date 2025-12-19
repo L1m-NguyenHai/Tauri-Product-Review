@@ -915,6 +915,29 @@ export const publicAPI = {
     return apiRequest(`/reviews/?product_id=${productId}`);
   },
 
+  // Get detailed reviews for a product (optimized - includes pros, cons, media, user data)
+  getProductReviewsDetailed: async (
+    productId: string,
+    params?: {
+      limit?: number;
+      offset?: number;
+      sort_by?: string;
+      sort_order?: string;
+    }
+  ): Promise<Review[]> => {
+    const queryParams = new URLSearchParams();
+    if (params?.limit) queryParams.append("limit", params.limit.toString());
+    if (params?.offset) queryParams.append("offset", params.offset.toString());
+    if (params?.sort_by) queryParams.append("sort_by", params.sort_by);
+    if (params?.sort_order) queryParams.append("sort_order", params.sort_order);
+
+    const queryString = queryParams.toString();
+    const url = `/reviews/by-product/${productId}/detailed${
+      queryString ? "?" + queryString : ""
+    }`;
+    return apiRequest(url);
+  },
+
   getReviewDetail: async (reviewId: string): Promise<Review> => {
     return apiRequest(`/reviews/${reviewId}`);
   },

@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   Camera,
   Star,
@@ -24,23 +25,70 @@ const UserProfile: React.FC = () => {
   const { isDark } = useTheme();
   const { user } = useAuth();
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
+
   const [activeTab, setActiveTab] = useState("reviews");
-  const [userReviews, setUserReviews] = useState<any[]>([]);
-  const [userStats, setUserStats] = useState({
-    total_reviews: 0,
-    helpful_votes: 0,
-    followers: 0,
-    avg_rating: 0,
-  });
-  const [loading, setLoading] = useState(true);
-  const [userActivities, setUserActivities] = useState<UserActivity[]>([]);
-  const [uploadingAvatar, setUploadingAvatar] = useState(false);
   const [mediaPreview, setMediaPreview] = useState<{
     url: string;
     type: string;
   } | null>(null);
   const [sendingVerification, setSendingVerification] = useState(false);
   const [verificationMessage, setVerificationMessage] = useState("");
+
+  // Fetch user stats with React Query
+  const { data: userStats, isLoading: statsLoading } = useQuery({
+    queryKey: ["user", "stats", user?.id],
+    queryFn: () => userAPI.getUserStats(),
+    enabled: !!user,
+    staleTime: 2 * 60 * 1000,
+  });
+
+  // Fetch user reviews with React Query (optimized - no N+1)
+  const { data: userReviewsData } = useQuery({
+    queryKey: ["user", "reviews", user?.id],
+    queryFn: async () => {
+      if (!user?.id) return { items: [] };
+      const reviewsData = await userAPI.getUserReviews(user.id);
+
+      // Fetch details for all reviews efficiently
+      const reviewsWithMedia = await Promise.all(
+        (reviewsData.items || []).map(async (review: any) => {
+          try {
+            return await publicAPI.getReviewDetail(review.id);
+          } catch (e) {
+            console.error("Error fetching review detail:", e);
+            return review;
+          }
+        })
+      );
+      return { items: reviewsWithMedia };
+    },
+    enabled: !!user,
+    staleTime: 1 * 60 * 1000,
+  });
+
+  const userReviews = userReviewsData?.items || [];
+
+  // Fetch user activities with React Query
+  const { data: userActivities = [], isLoading: loading } = useQuery({
+    queryKey: ["user", "activities", user?.id],
+    queryFn: () => (user?.id ? activityAPI.getActivities(user.id, 20, 0) : []),
+    enabled: !!user?.id,
+    staleTime: 1 * 60 * 1000,
+  });
+
+  // Avatar upload mutation
+  const avatarMutation = useMutation({
+    mutationFn: (formData: FormData) => userAPI.updateUserAvatar(formData),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["user"] });
+      window.location.reload();
+    },
+    onError: (error) => {
+      console.error("Error uploading avatar:", error);
+      alert("Error uploading avatar");
+    },
+  });
 
   // Handle avatar upload
   const handleAvatarUpload = async (
@@ -50,17 +98,7 @@ const UserProfile: React.FC = () => {
     const file = event.target.files[0];
     const formData = new FormData();
     formData.append("file", file);
-    setUploadingAvatar(true);
-    try {
-      await userAPI.updateUserAvatar(formData);
-      // Reload page or refetch user info
-      window.location.reload();
-    } catch (error) {
-      console.error("Error uploading avatar:", error);
-      alert("Error uploading avatar");
-    } finally {
-      setUploadingAvatar(false);
-    }
+    await avatarMutation.mutateAsync(formData);
   };
 
   // Handle resend verification email
@@ -83,43 +121,8 @@ const UserProfile: React.FC = () => {
     }
   };
 
-  useEffect(() => {
-    if (!user) return;
-    const fetchUserData = async () => {
-      setLoading(true);
-      try {
-        // Fetch user statistics
-        const statsData = await userAPI.getUserStats();
-        setUserStats(statsData);
-
-        // Fetch user reviews
-        const reviewsData = await userAPI.getUserReviews(user.id);
-
-        // Lấy media của từng review từ API review detail (giống ProductDetail)
-        const reviewsWithMedia = await Promise.all(
-          (reviewsData.items || []).map(async (review: any) => {
-            try {
-              const detail = await publicAPI.getReviewDetail(review.id);
-              return { ...review, ...detail };
-            } catch (e) {
-              console.error("Error fetching review detail:", e);
-            }
-            return review;
-          })
-        );
-        setUserReviews(reviewsWithMedia);
-
-        // Fetch user activities
-        const activities = await activityAPI.getActivities(user.id, 20, 0);
-        setUserActivities(activities);
-      } catch (error) {
-        console.error("Error fetching user data:", error);
-      } finally {
-        setLoading(false);
-      }
-    };
-    fetchUserData();
-  }, [user, navigate]);
+  // Data is now fetched via React Query hooks above
+  // No more useEffect with manual fetch!
 
   if (!user) {
     return (
@@ -175,12 +178,12 @@ const UserProfile: React.FC = () => {
                 accept="image/*"
                 onChange={handleAvatarUpload}
                 className="hidden"
-                disabled={uploadingAvatar}
+                disabled={avatarMutation.isPending}
                 aria-label="Upload profile picture"
                 title="Upload profile picture"
               />
             </label>
-            {uploadingAvatar && (
+            {avatarMutation.isPending && (
               <div className="absolute inset-0 bg-black bg-opacity-50 rounded-full flex items-center justify-center">
                 <div className="text-white text-sm">Uploading...</div>
               </div>
@@ -275,7 +278,7 @@ const UserProfile: React.FC = () => {
                     isDark ? "text-white" : "text-gray-900"
                   }`}
                 >
-                  {userStats.total_reviews || 0}
+                  {statsLoading ? "..." : userStats?.total_reviews || 0}
                 </div>
                 <div
                   className={`text-sm ${
@@ -291,7 +294,7 @@ const UserProfile: React.FC = () => {
                     isDark ? "text-white" : "text-gray-900"
                   }`}
                 >
-                  {userStats.helpful_votes || 0}
+                  {statsLoading ? "..." : userStats?.helpful_votes || 0}
                 </div>
                 <div
                   className={`text-sm ${
@@ -307,7 +310,7 @@ const UserProfile: React.FC = () => {
                     isDark ? "text-white" : "text-gray-900"
                   }`}
                 >
-                  {userStats.followers || 0}
+                  {statsLoading ? "..." : userStats?.followers || 0}
                 </div>
                 <div
                   className={`text-sm ${
@@ -323,7 +326,9 @@ const UserProfile: React.FC = () => {
                     isDark ? "text-white" : "text-gray-900"
                   }`}
                 >
-                  {userStats.avg_rating || 0}
+                  {statsLoading
+                    ? "..."
+                    : userStats?.avg_rating?.toFixed(1) || "0.0"}
                 </div>
                 <div
                   className={`text-sm ${
@@ -386,8 +391,11 @@ const UserProfile: React.FC = () => {
                 userReviews.map((review) => (
                   <div
                     key={review.id}
-                    className={`p-4 rounded-lg border ${
-                      isDark ? "border-gray-700" : "border-gray-200"
+                    onClick={() => navigate(`/products/${review.product_id}`)}
+                    className={`p-4 rounded-lg border cursor-pointer transition-all hover:shadow-md ${
+                      isDark
+                        ? "border-gray-700 hover:border-blue-500"
+                        : "border-gray-200 hover:border-blue-400"
                     }`}
                   >
                     <div className="flex gap-4">

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useMemo } from "react";
 import { NavLink, Link, useLocation } from "react-router-dom";
 import {
   Home,
@@ -12,9 +12,9 @@ import {
   Grid,
   List,
 } from "lucide-react";
-import { publicAPI } from "../../services/api";
 import { useTheme } from "../../contexts/ThemeContext";
 import { useAuth } from "../../contexts/AuthContext";
+import { useCategories } from "../../contexts/CategoriesContext";
 
 interface SidebarProps {
   isOpen: boolean;
@@ -35,30 +35,20 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, productFilters }) => {
   const { user, isAdmin } = useAuth();
   const location = useLocation();
   const isProductsPage = location.pathname === "/products";
-  const [categories, setCategories] = useState<{ id: string; name: string }[]>([
-    { id: "all", name: "All Categories" },
-  ]);
 
-  useEffect(() => {
-    const fetchCategories = async () => {
-      try {
-        const response = await publicAPI.getCategories();
-        if (response && Array.isArray(response)) {
-          setCategories([
-            { id: "all", name: "All Categories" },
-            ...response.map((category: any) => ({
-              id: category.id,
-              name: category.name,
-            })),
-          ]);
-        }
-      } catch (error) {
-        console.error("Error fetching categories:", error);
-      }
-    };
+  // Use shared categories from context (cached with React Query)
+  const { categories: fetchedCategories } = useCategories();
 
-    fetchCategories();
-  }, []);
+  const categories = useMemo(
+    () => [
+      { id: "all", name: "All Categories" },
+      ...fetchedCategories.map((category: any) => ({
+        id: category.id,
+        name: category.name,
+      })),
+    ],
+    [fetchedCategories]
+  );
 
   const navItems = [
     { to: "/", icon: Home, label: "Home" },

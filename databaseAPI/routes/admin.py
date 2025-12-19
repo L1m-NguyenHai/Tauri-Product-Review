@@ -2,7 +2,7 @@ from fastapi import APIRouter, HTTPException, status, Depends, Query
 from typing import List, Dict, Any
 from models.schemas import DashboardStats
 from auth.security import get_current_admin_user
-from database.connection import get_conn, put_conn
+from database.connection import get_read_conn, get_write_conn, put_read_conn, put_write_conn, safe_rollback
 from psycopg2.extras import RealDictCursor
 import logging
 
@@ -13,7 +13,7 @@ router = APIRouter(prefix="/admin", tags=["Admin Dashboard"])
 @router.get("/dashboard", response_model=DashboardStats)
 def get_dashboard_stats(current_admin: dict = Depends(get_current_admin_user)):
     """Get dashboard statistics (admin only)"""
-    conn = get_conn()
+    conn = get_read_conn()
     try:
         with conn.cursor(cursor_factory=RealDictCursor) as cur:
             # Get total users
@@ -53,7 +53,7 @@ def get_dashboard_stats(current_admin: dict = Depends(get_current_admin_user)):
         logger.exception("Error getting dashboard stats: %s", e)
         raise HTTPException(status_code=500, detail=str(e))
     finally:
-        put_conn(conn)
+        put_read_conn(conn)
 
 @router.get("/analytics/products")
 def get_product_analytics(
@@ -61,7 +61,7 @@ def get_product_analytics(
     days: int = Query(30, ge=1, le=365)
 ):
     """Get product analytics (admin only)"""
-    conn = get_conn()
+    conn = get_read_conn()
     try:
         with conn.cursor(cursor_factory=RealDictCursor) as cur:
             # Products by category
@@ -127,7 +127,7 @@ def get_product_analytics(
         logger.exception("Error getting product analytics: %s", e)
         raise HTTPException(status_code=500, detail=str(e))
     finally:
-        put_conn(conn)
+        put_read_conn(conn)
 
 @router.get("/analytics/reviews")
 def get_review_analytics(
@@ -135,7 +135,7 @@ def get_review_analytics(
     days: int = Query(30, ge=1, le=365)
 ):
     """Get review analytics (admin only)"""
-    conn = get_conn()
+    conn = get_read_conn()
     try:
         with conn.cursor(cursor_factory=RealDictCursor) as cur:
             # Reviews by status
@@ -217,7 +217,7 @@ def get_review_analytics(
         logger.exception("Error getting review analytics: %s", e)
         raise HTTPException(status_code=500, detail=str(e))
     finally:
-        put_conn(conn)
+        put_read_conn(conn)
 
 @router.get("/analytics/users")
 def get_user_analytics(
@@ -225,7 +225,7 @@ def get_user_analytics(
     days: int = Query(30, ge=1, le=365)
 ):
     """Get user analytics (admin only)"""
-    conn = get_conn()
+    conn = get_read_conn()
     try:
         with conn.cursor(cursor_factory=RealDictCursor) as cur:
             # Users by role
@@ -289,14 +289,14 @@ def get_user_analytics(
         logger.exception("Error getting user analytics: %s", e)
         raise HTTPException(status_code=500, detail=str(e))
     finally:
-        put_conn(conn)
+        put_read_conn(conn)
 
 @router.get("/analytics/engagement")
 def get_engagement_analytics(
     current_admin: dict = Depends(get_current_admin_user)
 ):
     """Get engagement analytics (admin only)"""
-    conn = get_conn()
+    conn = get_read_conn()
     try:
         with conn.cursor(cursor_factory=RealDictCursor) as cur:
             # Average rating by category
@@ -361,12 +361,12 @@ def get_engagement_analytics(
         logger.exception("Error getting engagement analytics: %s", e)
         raise HTTPException(status_code=500, detail=str(e))
     finally:
-        put_conn(conn)
+        put_read_conn(conn)
 
 @router.get("/system/health")
 def system_health_check(current_admin: dict = Depends(get_current_admin_user)):
     """System health check (admin only)"""
-    conn = get_conn()
+    conn = get_read_conn()
     try:
         with conn.cursor(cursor_factory=RealDictCursor) as cur:
             # Database connection test
@@ -431,12 +431,12 @@ def system_health_check(current_admin: dict = Depends(get_current_admin_user)):
             "error": str(e)
         }
     finally:
-        put_conn(conn)
+        put_read_conn(conn)
 
 @router.post("/maintenance/cleanup-orphaned")
 def cleanup_orphaned_records(current_admin: dict = Depends(get_current_admin_user)):
     """Clean up orphaned records (admin only)"""
-    conn = get_conn()
+    conn = get_write_conn()
     try:
         with conn.cursor(cursor_factory=RealDictCursor) as cur:
             cleanup_results = {}
@@ -472,11 +472,11 @@ def cleanup_orphaned_records(current_admin: dict = Depends(get_current_admin_use
             }
             
     except Exception as e:
-        conn.rollback()
+        safe_rollback(conn)
         logger.exception("Error during cleanup: %s", e)
         raise HTTPException(status_code=500, detail=str(e))
     finally:
-        put_conn(conn)
+        put_write_conn(conn)
 
 @router.get("/logs/recent")
 def get_recent_activity(
@@ -484,7 +484,7 @@ def get_recent_activity(
     limit: int = Query(50, ge=1, le=200)
 ):
     """Get recent system activity (admin only)"""
-    conn = get_conn()
+    conn = get_read_conn()
     try:
         with conn.cursor(cursor_factory=RealDictCursor) as cur:
             # Recent user registrations
@@ -552,7 +552,7 @@ def get_recent_activity(
         logger.exception("Error getting recent activity: %s", e)
         raise HTTPException(status_code=500, detail=str(e))
     finally:
-        put_conn(conn)
+        put_read_conn(conn)
 
 # Store Links Management
 @router.get("/products/{product_id}/store-links")
@@ -561,7 +561,7 @@ def get_product_store_links(
     current_admin: dict = Depends(get_current_admin_user)
 ):
     """Get all store links for a product (admin only)"""
-    conn = get_conn()
+    conn = get_read_conn()
     try:
         with conn.cursor(cursor_factory=RealDictCursor) as cur:
             cur.execute("""
@@ -578,7 +578,7 @@ def get_product_store_links(
         logger.exception("Error getting store links: %s", e)
         raise HTTPException(status_code=500, detail=str(e))
     finally:
-        put_conn(conn)
+        put_read_conn(conn)
 
 @router.post("/products/{product_id}/store-links")
 def add_store_link(
@@ -587,7 +587,7 @@ def add_store_link(
     current_admin: dict = Depends(get_current_admin_user)
 ):
     """Add a new store link for a product (admin only)"""
-    conn = get_conn()
+    conn = get_write_conn()
     try:
         with conn.cursor(cursor_factory=RealDictCursor) as cur:
             # Validate product exists
@@ -614,11 +614,11 @@ def add_store_link(
             return {"message": "Store link added successfully", "store_link": dict(new_link)}
             
     except Exception as e:
-        conn.rollback()
+        safe_rollback(conn)
         logger.exception("Error adding store link: %s", e)
         raise HTTPException(status_code=500, detail=str(e))
     finally:
-        put_conn(conn)
+        put_write_conn(conn)
 
 @router.put("/store-links/{link_id}")
 def update_store_link(
@@ -627,7 +627,7 @@ def update_store_link(
     current_admin: dict = Depends(get_current_admin_user)
 ):
     """Update a store link (admin only)"""
-    conn = get_conn()
+    conn = get_write_conn()
     try:
         with conn.cursor(cursor_factory=RealDictCursor) as cur:
             # Check if link exists
@@ -655,11 +655,11 @@ def update_store_link(
             return {"message": "Store link updated successfully", "store_link": dict(updated_link)}
             
     except Exception as e:
-        conn.rollback()
+        safe_rollback(conn)
         logger.exception("Error updating store link: %s", e)
         raise HTTPException(status_code=500, detail=str(e))
     finally:
-        put_conn(conn)
+        put_write_conn(conn)
 
 @router.delete("/store-links/{link_id}")
 def delete_store_link(
@@ -667,7 +667,7 @@ def delete_store_link(
     current_admin: dict = Depends(get_current_admin_user)
 ):
     """Delete a store link (admin only)"""
-    conn = get_conn()
+    conn = get_write_conn()
     try:
         with conn.cursor(cursor_factory=RealDictCursor) as cur:
             # Check if link exists
@@ -683,11 +683,11 @@ def delete_store_link(
             return {"message": "Store link deleted successfully"}
             
     except Exception as e:
-        conn.rollback()
+        safe_rollback(conn)
         logger.exception("Error deleting store link: %s", e)
         raise HTTPException(status_code=500, detail=str(e))
     finally:
-        put_conn(conn)
+        put_write_conn(conn)
 
 @router.delete("/products/{product_id}")
 def delete_product(
@@ -695,7 +695,7 @@ def delete_product(
     current_admin: dict = Depends(get_current_admin_user)
 ):
     """Delete a product and all related data (admin only)"""
-    conn = get_conn()
+    conn = get_write_conn()
     try:
         with conn.cursor(cursor_factory=RealDictCursor) as cur:
             # Check if product exists
@@ -780,8 +780,8 @@ def delete_product(
     except HTTPException:
         raise
     except Exception as e:
-        conn.rollback()
+        safe_rollback(conn)
         logger.exception("Error deleting product: %s", e)
         raise HTTPException(status_code=500, detail=str(e))
     finally:
-        put_conn(conn)
+        put_write_conn(conn)

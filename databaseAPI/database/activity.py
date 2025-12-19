@@ -1,11 +1,11 @@
 # Hoạt động với bảng user_activities
-from database.connection import get_conn, put_conn
+from database.connection import get_read_conn, get_write_conn, put_read_conn, put_write_conn
 from psycopg2.extras import RealDictCursor
 from fastapi import HTTPException
 import json
 
 def create_user_activity(user_id, activity_type, activity_data=None):
-	conn = get_conn()
+	conn = get_write_conn()
 	try:
 		with conn.cursor(cursor_factory=RealDictCursor) as cur:
 			# Xóa activity cũ hơn 30 ngày trước khi thêm mới
@@ -31,10 +31,10 @@ def create_user_activity(user_id, activity_type, activity_data=None):
 		conn.rollback()
 		raise HTTPException(status_code=500, detail=f"Error creating user activity: {e}")
 	finally:
-		put_conn(conn)
+		put_write_conn(conn)
 
 def get_user_activities(user_id=None, limit=20, offset=0):
-	conn = get_conn()
+	conn = get_read_conn()
 	try:
 		with conn.cursor(cursor_factory=RealDictCursor) as cur:
 			if user_id:
@@ -60,4 +60,4 @@ def get_user_activities(user_id=None, limit=20, offset=0):
 	except Exception as e:
 		raise HTTPException(status_code=500, detail=f"Error fetching user activities: {e}")
 	finally:
-		put_conn(conn)
+		put_read_conn(conn)

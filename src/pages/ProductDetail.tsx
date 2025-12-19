@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
 import { useParams, Link, useNavigate } from "react-router-dom";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   Star,
   Heart,
@@ -23,17 +24,18 @@ import ConfirmDialog from "../components/ConfirmDialog";
 import ReviewModal from "../components/ReviewModal/ReviewModal";
 import ReviewerBadge from "../components/ReviewerBadge";
 import EditProductModal from "../components/EditProductModal";
-import { publicAPI, userAPI, reviewAPI, adminAPI } from "../services/api";
+import { publicAPI, reviewAPI, adminAPI } from "../services/api";
 import { useNotification } from "../components/Notification";
 
 const ProductDetail: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const { isDark } = useTheme();
   const { user, isAdmin } = useAuth();
   const { showNotification, NotificationComponent } = useNotification();
-  const [product, setProduct] = useState<any | null>(null);
-  const [loading, setLoading] = useState<boolean>(true);
+
+  // UI State
   const [activeImage, setActiveImage] = useState(0);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [expandedReplies, setExpandedReplies] = useState<Set<string>>(
@@ -41,7 +43,6 @@ const ProductDetail: React.FC = () => {
   );
   const [replyingTo, setReplyingTo] = useState<string | null>(null);
   const [replyContent, setReplyContent] = useState("");
-  const [reviews, setReviews] = useState<any[]>([]);
   const [mediaPreview, setMediaPreview] = useState<{
     url: string;
     type: string;
@@ -66,166 +67,68 @@ const ProductDetail: React.FC = () => {
   const activeThumbRef = useRef<HTMLButtonElement>(null);
 
   const handleProductUpdated = (updatedProduct: any) => {
-    setProduct(updatedProduct);
+    // Update the product in React Query cache
+    queryClient.setQueryData(["product", id], updatedProduct);
     setIsEditProductModalOpen(false);
   };
 
-  useEffect(() => {
-    const fetchProductDetails = async () => {
-      setLoading(true);
-      try {
-        const data = await publicAPI.getProduct(id!);
+  // Fetch product details with React Query
+  const { data: product, isLoading: productLoading } = useQuery({
+    queryKey: ["product", id],
+    queryFn: async () => {
+      const data = await publicAPI.getProduct(id!);
 
-        // Handle product images - keep as objects with image_url
-        if (data) {
-          if (Array.isArray(data.images)) {
-            // Images is already an array of objects with image_url
-            // No need to transform, just use directly
-          } else if (data.display_image) {
-            // If no images array but has display_image, create array with one object
-            data.images = [
-              {
-                image_url: data.display_image,
-                id: "display",
-                is_primary: true,
-                product_id: data.id,
-                sort_order: 0,
-                created_at: data.created_at || new Date().toISOString(),
-              },
-            ];
-          } else {
-            data.images = [];
-          }
-        }
-        setProduct(data);
-      } catch (error) {
-        console.error("Error fetching product details:", error);
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    const fetchReviews = async () => {
-      try {
-        // First get the list of review IDs for this product
-        const reviewsList = await publicAPI.getReviewsByProduct(id!);
-
-        // Then fetch detailed data for each review including pros, cons and media
-        if (reviewsList && reviewsList.length > 0) {
-          const detailedReviews = await Promise.all(
-            reviewsList.map(async (review: any) => {
-              try {
-                return await publicAPI.getReviewDetail(review.id);
-              } catch (error) {
-                console.error(
-                  `Error fetching detailed review data for ${review.id}:`,
-                  error
-                );
-                return review; // Return original review if detail fetch fails
-              }
-            })
-          );
-          setReviews(detailedReviews);
+      // Handle product images
+      if (data) {
+        if (Array.isArray(data.images)) {
+          // Images already in correct format
+        } else if (data.display_image) {
+          data.images = [
+            {
+              image_url: data.display_image,
+              id: "display",
+              is_primary: true,
+              product_id: data.id,
+              sort_order: 0,
+              created_at: data.created_at || new Date().toISOString(),
+            },
+          ];
         } else {
-          setReviews([]);
+          data.images = [];
         }
-      } catch (error) {
-        console.error("Error fetching reviews:", error);
       }
-    };
+      return data;
+    },
+    enabled: !!id,
+    staleTime: 1 * 60 * 1000, // 1 minute
+  });
 
-    if (id) {
-      fetchProductDetails();
-      fetchReviews();
-    }
-  }, [id]);
+  // Fetch detailed reviews with React Query (NO MORE N+1!)
+  // This single call replaces 31+ API calls with just 1 call
+  const { data: reviews = [], isLoading: reviewsLoading } = useQuery({
+    queryKey: ["reviews", "detailed", id],
+    queryFn: () => publicAPI.getProductReviewsDetailed(id!, { limit: 50 }),
+    enabled: !!id,
+    staleTime: 1 * 60 * 1000, // 1 minute
+  });
 
-  const avatarCache = new Map<string, string>();
+  const loading = productLoading || reviewsLoading;
 
-  const fetchUserAvatar = async (userId: string) => {
-    if (avatarCache.has(userId)) {
-      return avatarCache.get(userId);
-    }
-
+  // Fetch replies for a specific review (lazy loaded)
+  const fetchReviewReplies = async (reviewId: string) => {
     try {
-      const data = await userAPI.getUserById(userId);
-      // Check if avatar exists and is a valid URL, otherwise use placeholder
-      const avatar =
-        data.avatar && data.avatar.trim() !== ""
-          ? data.avatar
-          : "https://via.placeholder.com/32";
-      avatarCache.set(userId, avatar);
-      return avatar;
+      const replies = await reviewAPI.getReviewComments(reviewId);
+      return replies.map((reply: any) => ({
+        ...reply,
+        user_name: reply.user_name || reply.username || "Anonymous",
+        user_avatar:
+          reply.user_avatar || reply.avatar || "https://via.placeholder.com/32",
+      }));
     } catch (error) {
-      console.error(`Error fetching user data for userId: ${userId}`, error);
-      const fallbackAvatar = "https://via.placeholder.com/32";
-      avatarCache.set(userId, fallbackAvatar);
-      return fallbackAvatar;
+      console.error(`Error fetching replies for review ${reviewId}:`, error);
+      return [];
     }
   };
-
-  useEffect(() => {
-    const fetchRepliesForReviews = async () => {
-      const updatedReviews = await Promise.all(
-        reviews.map(async (review) => {
-          if (!review.repliesFetched) {
-            try {
-              const replies = await reviewAPI.getReviewComments(review.id);
-
-              // Ensure consistent field names for each reply
-              const formattedReplies = replies.map((reply: any) => ({
-                ...reply,
-                // Ensure we have user_name and user_avatar fields
-                user_name: reply.user_name || reply.username || "Anonymous",
-                user_avatar:
-                  reply.user_avatar ||
-                  reply.avatar ||
-                  "https://via.placeholder.com/32",
-              }));
-              return {
-                ...review,
-                replies: formattedReplies,
-                repliesFetched: true,
-              };
-            } catch (error) {
-              console.error(
-                `Error fetching replies for review ${review.id}:`,
-                error
-              );
-              return { ...review, replies: [], repliesFetched: true };
-            }
-          }
-          return review;
-        })
-      );
-      setReviews(updatedReviews);
-    };
-
-    if (reviews.length > 0) {
-      fetchRepliesForReviews();
-    }
-  }, [reviews.length]);
-
-  useEffect(() => {
-    const fetchAvatarsForReviews = async () => {
-      const updatedReviews = await Promise.all(
-        reviews.map(async (review) => {
-          if (!review.avatarFetched) {
-            // Đảm bảo user_id là một string
-            const userId = review.user_id ? review.user_id.toString() : "";
-            const avatar = await fetchUserAvatar(userId);
-            return { ...review, avatar, avatarFetched: true };
-          }
-          return review;
-        })
-      );
-      setReviews(updatedReviews);
-    };
-
-    if (reviews.length > 0) {
-      fetchAvatarsForReviews();
-    }
-  }, [reviews]);
 
   // Keyboard navigation for image gallery
   useEffect(() => {
@@ -294,12 +197,26 @@ const ProductDetail: React.FC = () => {
     }
   }, [activeImage, scrollActiveThumbnailToCenter, product?.images]);
 
-  const toggleReplies = (reviewId: string) => {
+  const toggleReplies = async (reviewId: string) => {
     const newExpanded = new Set(expandedReplies);
     if (newExpanded.has(reviewId)) {
       newExpanded.delete(reviewId);
     } else {
       newExpanded.add(reviewId);
+      // Lazy load replies when expanding
+      const review = reviews.find((r) => r.id === reviewId);
+      if (review && !review.repliesFetched) {
+        const replies = await fetchReviewReplies(reviewId);
+        // Update query cache with replies
+        queryClient.setQueryData(
+          ["reviews", "detailed", id],
+          (oldData: any) => {
+            return oldData?.map((r: any) =>
+              r.id === reviewId ? { ...r, replies, repliesFetched: true } : r
+            );
+          }
+        );
+      }
     }
     setExpandedReplies(newExpanded);
   };
@@ -309,73 +226,58 @@ const ProductDetail: React.FC = () => {
     setReplyContent("");
   };
 
+  // Mutation for submitting replies
+  const submitReplyMutation = useMutation({
+    mutationFn: async ({
+      reviewId,
+      content,
+    }: {
+      reviewId: string;
+      content: string;
+    }) => {
+      return await reviewAPI.addReviewComment(reviewId, { content });
+    },
+    onSuccess: (newReply, { reviewId }) => {
+      // Optimistic update to query cache
+      queryClient.setQueryData(["reviews", "detailed", id], (oldData: any) => {
+        return oldData?.map((review: any) => {
+          if (review.id === reviewId) {
+            const formattedReply = {
+              ...newReply,
+              user_name: user?.name || "Anonymous",
+              user_avatar: user?.avatar || "https://via.placeholder.com/32",
+            };
+            return {
+              ...review,
+              replies: [...(review.replies || []), formattedReply],
+              repliesFetched: true,
+            };
+          }
+          return review;
+        });
+      });
+
+      // Auto-expand replies
+      if (!expandedReplies.has(reviewId)) {
+        const newExpanded = new Set(expandedReplies);
+        newExpanded.add(reviewId);
+        setExpandedReplies(newExpanded);
+      }
+
+      // Reset form
+      setReplyingTo(null);
+      setReplyContent("");
+      showNotification("success", "💬 Trả lời đã được gửi thành công!");
+    },
+    onError: (error) => {
+      console.error("Error submitting reply:", error);
+      showNotification("error", "❌ Không thể gửi trả lời!");
+    },
+  });
+
   const submitReply = async (reviewId: string, content: string) => {
     if (!content.trim() || !user) return;
-
-    try {
-      const accessToken = localStorage.getItem("access_token");
-      const tokenType = localStorage.getItem("token_type");
-
-      if (!accessToken || !tokenType) {
-        alert("Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.");
-        return;
-      }
-
-      const response = await fetch(
-        `${getApiBaseUrl()}/reviews/${reviewId}/comments`,
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `${tokenType} ${accessToken}`,
-          },
-          body: JSON.stringify({ content }),
-        }
-      );
-
-      if (response.ok) {
-        const newReply = await response.json();
-
-        // Thêm thông tin người dùng vào reply để hiển thị ngay lập tức
-        const formattedReply = {
-          ...newReply,
-          user_name: user.name || "Anonymous",
-          user_avatar: user.avatar || "https://via.placeholder.com/32",
-        };
-
-        setReviews((prevReviews) =>
-          prevReviews.map((review) =>
-            review.id === reviewId
-              ? {
-                  ...review,
-                  replies: [...(review.replies || []), formattedReply],
-                }
-              : review
-          )
-        );
-
-        // Tự động mở phần trả lời sau khi gửi
-        if (!expandedReplies.has(reviewId)) {
-          const newExpanded = new Set(expandedReplies);
-          newExpanded.add(reviewId);
-          setExpandedReplies(newExpanded);
-        }
-
-        // Đóng form reply sau khi gửi thành công
-        setReplyingTo(null);
-        setReplyContent("");
-        showNotification("success", "💬 Trả lời đã được gửi thành công!");
-      } else {
-        console.error("Failed to submit reply:", await response.text());
-        showNotification(
-          "error",
-          "❌ Không thể gửi trả lời. Vui lòng đăng nhập lại hoặc thử lại sau."
-        );
-      }
-    } catch (error) {
-      console.error("Error submitting reply:", error);
-      showNotification("error", "❌ Đã xảy ra lỗi khi gửi trả lời.");
-    }
+    await submitReplyMutation.mutateAsync({ reviewId, content });
   };
 
   const handleHelpfulVote = async (reviewId: string) => {

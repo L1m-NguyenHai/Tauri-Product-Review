@@ -8,7 +8,7 @@ from models.schemas import (
     ReviewHelpfulVoteCreate, ReviewHelpfulVoteResponse
 )
 from auth.security import get_current_user, get_current_admin_user
-from database.connection import get_conn, put_conn
+from database.connection import get_read_conn, get_write_conn, put_read_conn, put_write_conn, safe_rollback
 from psycopg2.extras import RealDictCursor
 import logging
 import uuid
@@ -33,7 +33,7 @@ def list_reviews(
     sort_order: str = Query("desc")
 ):
     """List reviews with filtering"""
-    conn = get_conn()
+    conn = get_read_conn()
     try:
         with conn.cursor(cursor_factory=RealDictCursor) as cur:
             # Build WHERE clause
@@ -93,12 +93,159 @@ def list_reviews(
         logger.exception("Error listing reviews: %s", e)
         raise HTTPException(status_code=500, detail=str(e))
     finally:
-        put_conn(conn)
+        put_read_conn(conn)
+
+@router.get("/by-product/{product_id}/detailed", response_model=List[dict])
+def get_product_reviews_detailed(
+    product_id: str,
+    limit: int = Query(20, ge=1, le=100),
+    offset: int = Query(0, ge=0),
+    status: str = Query("published"),
+    sort_by: str = Query("created_at"),
+    sort_order: str = Query("desc")
+):
+    """
+    Get all reviews for a product with full details (pros, cons, media, user info)
+    Optimized to reduce N+1 queries - returns everything in one call
+    """
+    conn = get_read_conn()
+    try:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            # Build ORDER BY clause
+            valid_sort_fields = ["rating", "helpful_count", "created_at"]
+            if sort_by not in valid_sort_fields:
+                sort_by = "created_at"
+            
+            sort_order_sql = "DESC" if sort_order.lower() == "desc" else "ASC"
+            
+            # Get all reviews with user details in one query
+            query = f"""
+                SELECT 
+                    r.*,
+                    u.name as user_name,
+                    u.role as user_role,
+                    u.avatar as user_avatar,
+                    p.name as product_name
+                FROM reviews r
+                JOIN users u ON r.user_id = u.id
+                JOIN products p ON r.product_id = p.id
+                WHERE r.product_id = %s AND r.status = %s
+                ORDER BY r.{sort_by} {sort_order_sql}
+                LIMIT %s OFFSET %s
+            """
+            
+            cur.execute(query, (product_id, status, limit, offset))
+            reviews = cur.fetchall()
+            
+            if not reviews:
+                return []
+            
+            # Get all review IDs (keep as UUID objects, don't convert to string)
+            review_ids = [r['id'] for r in reviews]
+            
+            # Fetch all pros for these reviews in one query
+            cur.execute("""
+                SELECT * FROM review_pros 
+                WHERE review_id = ANY(%s::uuid[])
+                ORDER BY review_id, sort_order
+            """, (review_ids,))
+            all_pros = cur.fetchall()
+            
+            # Fetch all cons for these reviews in one query
+            cur.execute("""
+                SELECT * FROM review_cons 
+                WHERE review_id = ANY(%s::uuid[])
+                ORDER BY review_id, sort_order
+            """, (review_ids,))
+            all_cons = cur.fetchall()
+            
+            # Fetch all media for these reviews in one query
+            cur.execute("""
+                SELECT * FROM review_media 
+                WHERE review_id = ANY(%s::uuid[])
+                ORDER BY review_id, sort_order
+            """, (review_ids,))
+            all_media = cur.fetchall()
+            
+            # Group pros, cons, and media by review_id (keep as UUID for dict keys)
+            pros_by_review = {}
+            for pro in all_pros:
+                review_id = pro['review_id']
+                if review_id not in pros_by_review:
+                    pros_by_review[review_id] = []
+                # Convert UUID fields to string for proper JSON serialization
+                pro_dict = dict(pro)
+                pro_dict['id'] = str(pro_dict['id']) if pro_dict.get('id') else None
+                pro_dict['review_id'] = str(pro_dict['review_id']) if pro_dict.get('review_id') else None
+                pros_by_review[review_id].append(pro_dict)
+            
+            cons_by_review = {}
+            for con in all_cons:
+                review_id = con['review_id']
+                if review_id not in cons_by_review:
+                    cons_by_review[review_id] = []
+                # Convert UUID fields to string for proper JSON serialization
+                con_dict = dict(con)
+                con_dict['id'] = str(con_dict['id']) if con_dict.get('id') else None
+                con_dict['review_id'] = str(con_dict['review_id']) if con_dict.get('review_id') else None
+                cons_by_review[review_id].append(con_dict)
+            
+            media_by_review = {}
+            for media_item in all_media:
+                review_id = media_item['review_id']
+                if review_id not in media_by_review:
+                    media_by_review[review_id] = []
+                # Convert UUID fields to string for proper JSON serialization
+                media_dict = dict(media_item)
+                media_dict['id'] = str(media_dict['id']) if media_dict.get('id') else None
+                media_dict['review_id'] = str(media_dict['review_id']) if media_dict.get('review_id') else None
+                media_by_review[review_id].append(media_dict)
+            
+            # Build final result
+            detailed_reviews = []
+            for review in reviews:
+                try:
+                    review_dict = dict(review)
+                    review_id = review_dict['id']
+                    
+                    # Use UUID directly as dict key
+                    review_dict['pros'] = pros_by_review.get(review_id, [])
+                    review_dict['cons'] = cons_by_review.get(review_id, [])
+                    review_dict['media'] = media_by_review.get(review_id, [])
+                    
+                    # Add avatar at top level for frontend compatibility
+                    review_dict['avatar'] = review_dict.get('user_avatar')
+                    
+                    # Build user object before converting UUIDs
+                    review_dict['user'] = {
+                        'id': str(review_dict['user_id']) if review_dict.get('user_id') else None,
+                        'name': review_dict.get('user_name', 'Unknown'),
+                        'role': review_dict.get('user_role', 'user'),
+                        'avatar': review_dict.get('user_avatar')
+                    }
+                    
+                    # Convert UUID fields to string for JSON serialization
+                    review_dict['id'] = str(review_id) if review_id else None
+                    review_dict['product_id'] = str(review_dict['product_id']) if review_dict.get('product_id') else None
+                    review_dict['user_id'] = str(review_dict['user_id']) if review_dict.get('user_id') else None
+                    
+                    detailed_reviews.append(review_dict)
+                except Exception as review_error:
+                    logger.error("Error processing review %s: %s", review_dict.get('id'), review_error)
+                    continue
+            
+            return detailed_reviews
+            
+    except Exception as e:
+        logger.exception("Error getting detailed reviews for product %s: %s", product_id, e)
+        raise HTTPException(status_code=500, detail=f"Database error: {str(e)}")
+    finally:
+        put_read_conn(conn)
 
 @router.get("/{review_id}", response_model=dict)
 def get_review(review_id: str):
     """Get detailed review information including pros, cons, and media"""
-    conn = get_conn()
+    conn = get_read_conn()
     try:
         with conn.cursor(cursor_factory=RealDictCursor) as cur:
             # Get review details
@@ -158,7 +305,7 @@ def get_review(review_id: str):
         logger.exception("Error getting review %s: %s", review_id, e)
         raise HTTPException(status_code=500, detail=str(e))
     finally:
-        put_conn(conn)
+        put_read_conn(conn)
 
 @router.post("/", response_model=ReviewResponse)
 def create_review(
@@ -166,12 +313,13 @@ def create_review(
     current_user: dict = Depends(get_current_user)
 ):
     """Create new review"""
-    conn = get_conn()
+    conn = get_write_conn()
     try:
         with conn.cursor(cursor_factory=RealDictCursor) as cur:
             # Check if product exists
             cur.execute("SELECT id FROM products WHERE id = %s", (str(review.product_id),))
             if not cur.fetchone():
+                logger.warning(f"Review creation failed: Product {review.product_id} not found")
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
                     detail="Product not found"
@@ -184,6 +332,7 @@ def create_review(
             """, (str(current_user["id"]), str(review.product_id)))
             
             if cur.fetchone():
+                logger.warning(f"Review creation failed: User {current_user['id']} already reviewed product {review.product_id}")
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
                     detail="You have already reviewed this product"
@@ -226,11 +375,11 @@ def create_review(
     except HTTPException:
         raise
     except Exception as e:
-        conn.rollback()
+        safe_rollback(conn)
         logger.exception("Error creating review: %s", e)
         raise HTTPException(status_code=500, detail=str(e))
     finally:
-        put_conn(conn)
+        put_write_conn(conn)
 
 @router.put("/{review_id}", response_model=ReviewResponse)
 def update_review(
@@ -239,7 +388,7 @@ def update_review(
     current_user: dict = Depends(get_current_user)
 ):
     """Update review (owner or admin only)"""
-    conn = get_conn()
+    conn = get_write_conn()
     try:
         with conn.cursor(cursor_factory=RealDictCursor) as cur:
             # Get existing review
@@ -302,11 +451,11 @@ def update_review(
     except HTTPException:
         raise
     except Exception as e:
-        conn.rollback()
+        safe_rollback(conn)
         logger.exception("Error updating review: %s", e)
         raise HTTPException(status_code=500, detail=str(e))
     finally:
-        put_conn(conn)
+        put_write_conn(conn)
 
 @router.delete("/{review_id}")
 def delete_review(
@@ -314,7 +463,7 @@ def delete_review(
     current_user: dict = Depends(get_current_user)
 ):
     """Delete review (owner or admin only)"""
-    conn = get_conn()
+    conn = get_write_conn()
     try:
         with conn.cursor(cursor_factory=RealDictCursor) as cur:
             # Get existing review
@@ -342,11 +491,11 @@ def delete_review(
     except HTTPException:
         raise
     except Exception as e:
-        conn.rollback()
+        safe_rollback(conn)
         logger.exception("Error deleting review: %s", e)
         raise HTTPException(status_code=500, detail=str(e))
     finally:
-        put_conn(conn)
+        put_write_conn(conn)
 
 # Review Pros
 @router.post("/{review_id}/pros", response_model=ReviewProResponse)
@@ -356,7 +505,7 @@ def add_review_pro(
     current_user: dict = Depends(get_current_user)
 ):
     """Add pro to review"""
-    conn = get_conn()
+    conn = get_write_conn()
     try:
         with conn.cursor(cursor_factory=RealDictCursor) as cur:
             # Check review ownership
@@ -389,11 +538,11 @@ def add_review_pro(
     except HTTPException:
         raise
     except Exception as e:
-        conn.rollback()
+        safe_rollback(conn)
         logger.exception("Error adding review pro: %s", e)
         raise HTTPException(status_code=500, detail=str(e))
     finally:
-        put_conn(conn)
+        put_write_conn(conn)
 
 # Review Cons
 @router.post("/{review_id}/cons", response_model=ReviewConResponse)
@@ -403,7 +552,7 @@ def add_review_con(
     current_user: dict = Depends(get_current_user)
 ):
     """Add con to review"""
-    conn = get_conn()
+    conn = get_write_conn()
     try:
         with conn.cursor(cursor_factory=RealDictCursor) as cur:
             # Check review ownership
@@ -436,11 +585,11 @@ def add_review_con(
     except HTTPException:
         raise
     except Exception as e:
-        conn.rollback()
+        safe_rollback(conn)
         logger.exception("Error adding review con: %s", e)
         raise HTTPException(status_code=500, detail=str(e))
     finally:
-        put_conn(conn)
+        put_write_conn(conn)
 
 # Review Media
 @router.post("/{review_id}/media", response_model=ReviewMediaResponse)
@@ -452,7 +601,7 @@ def add_review_media(
     """Add media to review (JSON with media_url)"""
     from utils.discord_media import discord_client
     import re
-    conn = get_conn()
+    conn = get_write_conn()
     try:
         with conn.cursor(cursor_factory=RealDictCursor) as cur:
             # Check review ownership
@@ -488,11 +637,11 @@ def add_review_media(
     except HTTPException:
         raise
     except Exception as e:
-        conn.rollback()
+        safe_rollback(conn)
         logger.exception("Error adding review media: %s", e)
         raise HTTPException(status_code=500, detail=str(e))
     finally:
-        put_conn(conn)
+        put_write_conn(conn)
 
 @router.post("/{review_id}/media/upload", response_model=ReviewMediaResponse)
 async def upload_review_media(
@@ -505,10 +654,10 @@ async def upload_review_media(
     """Upload media file to review (via Discord bot or local storage fallback)"""
     logger.info(f"Starting media upload for review {review_id}, file: {file.filename}, type: {media_type}")
     
-    conn = get_conn()
+    # Step 1: Check review ownership (quick DB check)
+    conn = get_write_conn()
     try:
         with conn.cursor(cursor_factory=RealDictCursor) as cur:
-            # Check review ownership
             cur.execute("SELECT user_id FROM reviews WHERE id = %s", (review_id,))
             review = cur.fetchone()
             if not review:
@@ -521,67 +670,71 @@ async def upload_review_media(
                     status_code=status.HTTP_403_FORBIDDEN,
                     detail="Not authorized to modify this review"
                 )
+    finally:
+        put_write_conn(conn)
+    
+    # Validate file type and map MIME type to database type
+    db_media_type = None
+    if media_type.startswith('image/'):
+        db_media_type = 'image'
+    elif media_type.startswith('video/'):
+        db_media_type = 'video'
+    else:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Only image and video files are allowed"
+        )
+    
+    logger.info(f"File validation passed, saving temporarily...")
+    
+    # Step 2: Upload file (without holding DB connection)
+    temp_file_path = None
+    media_url = None
+    
+    try:
+        # Get file extension
+        file_ext = ""
+        if file.filename and "." in file.filename:
+            file_ext = "." + file.filename.split(".")[-1]
+        
+        with tempfile.NamedTemporaryFile(delete=False, suffix=file_ext) as temp_file:
+            content = await file.read()
+            temp_file.write(content)
+            temp_file_path = temp_file.name
+        
+        logger.info(f"File saved to temp path: {temp_file_path}")
+        
+        # Try Discord upload first
+        try:
+            from utils.discord_media import upload_media_to_discord
+            logger.info("Attempting Discord upload...")
+            media_url = await upload_media_to_discord(temp_file_path)
+            logger.info(f"Discord upload successful, URL: {media_url}")
+        except Exception as discord_error:
+            logger.warning(f"Discord upload failed: {discord_error}")
             
-            # Validate file type and map MIME type to database type
-            db_media_type = None
-            if media_type.startswith('image/'):
-                db_media_type = 'image'
-            elif media_type.startswith('video/'):
-                db_media_type = 'video'
-            else:
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail="Only image and video files are allowed"
-                )
+            # Fallback: Create a local storage path
+            uploads_dir = os.path.join(os.path.dirname(__file__), "..", "uploads")
+            os.makedirs(uploads_dir, exist_ok=True)
             
-            logger.info(f"File validation passed, saving temporarily...")
+            # Generate unique filename
+            import time
+            timestamp = int(time.time())
+            safe_filename = f"{timestamp}_{file.filename}" if file.filename else f"{timestamp}{file_ext}"
+            final_path = os.path.join(uploads_dir, safe_filename)
             
-            # Save file temporarily
-            temp_file_path = None
-            media_url = None
+            # Copy temp file to uploads directory
+            import shutil
+            shutil.copy2(temp_file_path, final_path)
             
-            try:
-                # Get file extension
-                file_ext = ""
-                if file.filename and "." in file.filename:
-                    file_ext = "." + file.filename.split(".")[-1]
-                
-                with tempfile.NamedTemporaryFile(delete=False, suffix=file_ext) as temp_file:
-                    content = await file.read()
-                    temp_file.write(content)
-                    temp_file_path = temp_file.name
-                
-                logger.info(f"File saved to temp path: {temp_file_path}")
-                
-                # Try Discord upload first
-                try:
-                    from utils.discord_media import upload_media_to_discord
-                    logger.info("Attempting Discord upload...")
-                    media_url = await upload_media_to_discord(temp_file_path)
-                    logger.info(f"Discord upload successful, URL: {media_url}")
-                except Exception as discord_error:
-                    logger.warning(f"Discord upload failed: {discord_error}")
-                    
-                    # Fallback: Create a local storage path
-                    # In production, you'd upload to a cloud storage service here
-                    uploads_dir = os.path.join(os.path.dirname(__file__), "..", "uploads")
-                    os.makedirs(uploads_dir, exist_ok=True)
-                    
-                    # Generate unique filename
-                    import time
-                    timestamp = int(time.time())
-                    safe_filename = f"{timestamp}_{file.filename}" if file.filename else f"{timestamp}{file_ext}"
-                    final_path = os.path.join(uploads_dir, safe_filename)
-                    
-                    # Copy temp file to uploads directory
-                    import shutil
-                    shutil.copy2(temp_file_path, final_path)
-                    
-                    # Create a local URL (you should replace this with your actual server URL)
-                    media_url = f"http://127.0.0.1:8000/uploads/{safe_filename}"
-                    logger.info(f"Fallback local storage successful, URL: {media_url}")
-                
-                # Save to database - use the mapped media type
+            # Create a local URL
+            media_url = f"http://127.0.0.1:8000/uploads/{safe_filename}"
+            logger.info(f"Fallback local storage successful, URL: {media_url}")
+        
+        # Step 3: Save to database with fresh connection
+        conn = get_write_conn()
+        try:
+            with conn.cursor(cursor_factory=RealDictCursor) as cur:
                 media_id = str(uuid.uuid4())
                 cur.execute("""
                     INSERT INTO review_media (id, review_id, media_url, media_type, sort_order)
@@ -593,21 +746,26 @@ async def upload_review_media(
                 
                 logger.info(f"Media saved to database with ID: {media_id}")
                 return new_media
-                
-            finally:
-                # Clean up temporary file
-                if temp_file_path and os.path.exists(temp_file_path):
-                    os.unlink(temp_file_path)
-                    logger.info("Temporary file cleaned up")
-                    
+        except Exception as db_error:
+            safe_rollback(conn)
+            logger.exception("Error saving media to database: %s", db_error)
+            raise HTTPException(status_code=500, detail=f"Failed to save media to database: {str(db_error)}")
+        finally:
+            put_write_conn(conn)
+            
     except HTTPException:
         raise
     except Exception as e:
-        conn.rollback()
         logger.exception("Error uploading review media: %s", e)
         raise HTTPException(status_code=500, detail=f"Upload failed: {str(e)}")
     finally:
-        put_conn(conn)
+        # Clean up temporary file
+        if temp_file_path and os.path.exists(temp_file_path):
+            try:
+                os.unlink(temp_file_path)
+                logger.info("Temporary file cleaned up")
+            except Exception as cleanup_error:
+                logger.warning(f"Failed to cleanup temp file: {cleanup_error}")
 
 # Review Helpful Votes
 @router.post("/{review_id}/helpful", response_model=ReviewHelpfulVoteResponse)
@@ -616,7 +774,7 @@ def vote_review_helpful(
     current_user: dict = Depends(get_current_user)
 ):
     """Vote review as helpful"""
-    conn = get_conn()
+    conn = get_write_conn()
     try:
         with conn.cursor(cursor_factory=RealDictCursor) as cur:
             # Check if review exists
@@ -653,11 +811,11 @@ def vote_review_helpful(
     except HTTPException:
         raise
     except Exception as e:
-        conn.rollback()
+        safe_rollback(conn)
         logger.exception("Error voting review helpful: %s", e)
         raise HTTPException(status_code=500, detail=str(e))
     finally:
-        put_conn(conn)
+        put_write_conn(conn)
 
 @router.delete("/{review_id}/helpful")
 def remove_helpful_vote(
@@ -665,7 +823,7 @@ def remove_helpful_vote(
     current_user: dict = Depends(get_current_user)
 ):
     """Remove helpful vote from review"""
-    conn = get_conn()
+    conn = get_write_conn()
     try:
         with conn.cursor(cursor_factory=RealDictCursor) as cur:
             cur.execute("""
@@ -687,11 +845,11 @@ def remove_helpful_vote(
     except HTTPException:
         raise
     except Exception as e:
-        conn.rollback()
+        safe_rollback(conn)
         logger.exception("Error removing helpful vote: %s", e)
         raise HTTPException(status_code=500, detail=str(e))
     finally:
-        put_conn(conn)
+        put_write_conn(conn)
 
 # Admin routes
 @router.get("/pending", response_model=List[ReviewResponse])
@@ -701,7 +859,7 @@ def list_pending_reviews(
     offset: int = Query(0, ge=0)
 ):
     """List pending reviews (admin only)"""
-    conn = get_conn()
+    conn = get_read_conn()
     try:
         with conn.cursor(cursor_factory=RealDictCursor) as cur:
             cur.execute("""
@@ -723,7 +881,7 @@ def list_pending_reviews(
         logger.exception("Error listing pending reviews: %s", e)
         raise HTTPException(status_code=500, detail=str(e))
     finally:
-        put_conn(conn)
+        put_read_conn(conn)
 
 @router.put("/{review_id}/approve")
 def approve_review(
@@ -731,7 +889,7 @@ def approve_review(
     current_admin: dict = Depends(get_current_admin_user)
 ):
     """Approve review (admin only)"""
-    conn = get_conn()
+    conn = get_write_conn()
     try:
         with conn.cursor(cursor_factory=RealDictCursor) as cur:
             cur.execute("""
@@ -754,11 +912,11 @@ def approve_review(
     except HTTPException:
         raise
     except Exception as e:
-        conn.rollback()
+        safe_rollback(conn)
         logger.exception("Error approving review: %s", e)
         raise HTTPException(status_code=500, detail=str(e))
     finally:
-        put_conn(conn)
+        put_write_conn(conn)
 
 @router.put("/{review_id}/reject")
 def reject_review(
@@ -766,7 +924,7 @@ def reject_review(
     current_admin: dict = Depends(get_current_admin_user)
 ):
     """Reject review (admin only)"""
-    conn = get_conn()
+    conn = get_write_conn()
     try:
         with conn.cursor(cursor_factory=RealDictCursor) as cur:
             cur.execute("""
@@ -789,11 +947,11 @@ def reject_review(
     except HTTPException:
         raise
     except Exception as e:
-        conn.rollback()
+        safe_rollback(conn)
         logger.exception("Error rejecting review: %s", e)
         raise HTTPException(status_code=500, detail=str(e))
     finally:
-        put_conn(conn)
+        put_write_conn(conn)
 
 # Review Comments
 @router.get("/{review_id}/comments", response_model=List[dict])
@@ -804,7 +962,7 @@ def list_review_comments(
     status: str = Query("visible")
 ):
     """List comments for a review"""
-    conn = get_conn()
+    conn = get_read_conn()
     try:
         with conn.cursor(cursor_factory=RealDictCursor) as cur:
             cur.execute(
@@ -828,7 +986,7 @@ def list_review_comments(
         logger.exception("Error listing review comments: %s", e)
         raise HTTPException(status_code=500, detail=str(e))
     finally:
-        put_conn(conn)
+        put_read_conn(conn)
 
 @router.post("/{review_id}/comments", response_model=dict)
 def create_review_comment(
@@ -837,7 +995,7 @@ def create_review_comment(
     current_user: dict = Depends(get_current_user)
 ):
     """Create a comment for a review"""
-    conn = get_conn()
+    conn = get_write_conn()
     try:
         with conn.cursor(cursor_factory=RealDictCursor) as cur:
             # --- Call clean-comment API trước khi lưu ---
@@ -870,11 +1028,11 @@ def create_review_comment(
             conn.commit()
             return new_comment
     except Exception as e:
-        conn.rollback()
+        safe_rollback(conn)
         logger.exception("Error creating review comment: %s", e)
         raise HTTPException(status_code=500, detail=str(e))
     finally:
-        put_conn(conn)
+        put_write_conn(conn)
 
 @router.put("/comments/{comment_id}", response_model=dict)
 def update_review_comment(
@@ -883,7 +1041,7 @@ def update_review_comment(
     current_user: dict = Depends(get_current_user)
 ):
     """Update a comment (owner or admin only)"""
-    conn = get_conn()
+    conn = get_write_conn()
     try:
         with conn.cursor(cursor_factory=RealDictCursor) as cur:
             cur.execute("SELECT * FROM review_comments WHERE id = %s", (comment_id,))
@@ -930,11 +1088,11 @@ def update_review_comment(
             conn.commit()
             return updated_comment
     except Exception as e:
-        conn.rollback()
+        safe_rollback(conn)
         logger.exception("Error updating review comment: %s", e)
         raise HTTPException(status_code=500, detail=str(e))
     finally:
-        put_conn(conn)
+        put_write_conn(conn)
 
 @router.delete("/comments/{comment_id}")
 def delete_review_comment(
@@ -942,7 +1100,7 @@ def delete_review_comment(
     current_user: dict = Depends(get_current_user)
 ):
     """Delete a comment (owner or admin only)"""
-    conn = get_conn()
+    conn = get_write_conn()
     try:
         with conn.cursor(cursor_factory=RealDictCursor) as cur:
             cur.execute("SELECT * FROM review_comments WHERE id = %s", (comment_id,))
@@ -967,8 +1125,8 @@ def delete_review_comment(
             conn.commit()
             return {"message": "Comment deleted successfully"}
     except Exception as e:
-        conn.rollback()
+        safe_rollback(conn)
         logger.exception("Error deleting review comment: %s", e)
         raise HTTPException(status_code=500, detail=str(e))
     finally:
-        put_conn(conn)
+        put_write_conn(conn)

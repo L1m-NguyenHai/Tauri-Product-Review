@@ -9,7 +9,7 @@ from models.schemas import (
     PaginationParams, UserRoleUpdate
 )
 from auth.security import get_current_user, get_current_admin_user
-from database.connection import get_conn, put_conn
+from database.connection import get_read_conn, get_write_conn, put_read_conn, put_write_conn, safe_rollback
 from psycopg2.extras import RealDictCursor
 import logging
 import uuid
@@ -21,7 +21,7 @@ router = APIRouter(prefix="/users", tags=["Users"])
 @router.get("/profile/stats")
 def get_user_stats(current_user: dict = Depends(get_current_user)):
     """Get current user's statistics"""
-    conn = get_conn()
+    conn = get_read_conn()  # Read operation - use read pool
     try:
         with conn.cursor(cursor_factory=RealDictCursor) as cur:
             # Get total reviews count
@@ -69,7 +69,7 @@ def get_user_stats(current_user: dict = Depends(get_current_user)):
         logger.exception("Error getting user stats: %s", e)
         raise HTTPException(status_code=500, detail=str(e))
     finally:
-        put_conn(conn)
+        put_read_conn(conn)  # Return to read pool
 
 @router.post("/profile/avatar", response_model=UserResponse)
 async def update_user_avatar(
@@ -92,7 +92,7 @@ async def update_user_avatar(
             detail="File size must be less than 5MB"
         )
     
-    conn = get_conn()
+    conn = get_write_conn()  # Write operation - use write pool
     try:
         # Save file temporarily
         temp_file_path = None
@@ -161,11 +161,11 @@ async def update_user_avatar(
     except HTTPException:
         raise
     except Exception as e:
-        conn.rollback()
+        safe_rollback(conn)
         logger.exception("Error updating user avatar: %s", e)
         raise HTTPException(status_code=500, detail=f"Avatar upload failed: {str(e)}")
     finally:
-        put_conn(conn)
+        put_write_conn(conn)
 
 @router.get("/profile", response_model=UserResponse)
 def get_user_profile(current_user: dict = Depends(get_current_user)):
@@ -178,7 +178,7 @@ def update_user_profile(
     current_user: dict = Depends(get_current_user)
 ):
     """Update current user's profile"""
-    conn = get_conn()
+    conn = get_write_conn()
     try:
         with conn.cursor(cursor_factory=RealDictCursor) as cur:
             update_fields = []
@@ -212,16 +212,16 @@ def update_user_profile(
             return updated_user
             
     except Exception as e:
-        conn.rollback()
+        safe_rollback(conn)
         logger.exception("Error updating user profile: %s", e)
         raise HTTPException(status_code=500, detail=str(e))
     finally:
-        put_conn(conn)
+        put_write_conn(conn)
 
 @router.get("/{user_id}", response_model=UserResponse)
 def get_user_by_id(user_id: str):
     """Get user by ID (public profile)"""
-    conn = get_conn()
+    conn = get_read_conn()
     try:
         with conn.cursor(cursor_factory=RealDictCursor) as cur:
             cur.execute("""
@@ -245,7 +245,7 @@ def get_user_by_id(user_id: str):
         logger.exception("Error getting user: %s", e)
         raise HTTPException(status_code=500, detail=str(e))
     finally:
-        put_conn(conn)
+        put_read_conn(conn)
 
 @router.get("/{user_id}/reviews")
 def get_user_reviews(
@@ -254,7 +254,7 @@ def get_user_reviews(
     offset: int = Query(0, ge=0)
 ):
     """Get user's reviews"""
-    conn = get_conn()
+    conn = get_read_conn()
     try:
         with conn.cursor(cursor_factory=RealDictCursor) as cur:
             cur.execute("""
@@ -294,7 +294,7 @@ def get_user_reviews(
         logger.exception("Error getting user reviews: %s", e)
         raise HTTPException(status_code=500, detail=str(e))
     finally:
-        put_conn(conn)
+        put_read_conn(conn)
 
 @router.post("/follow", response_model=UserFollowResponse)
 def follow_user(
@@ -308,7 +308,7 @@ def follow_user(
             detail="Cannot follow yourself"
         )
     
-    conn = get_conn()
+    conn = get_write_conn()
     try:
         with conn.cursor(cursor_factory=RealDictCursor) as cur:
             # Check if follow relationship already exists
@@ -359,11 +359,11 @@ def follow_user(
     except HTTPException:
         raise
     except Exception as e:
-        conn.rollback()
+        safe_rollback(conn)
         logger.exception("Error following user: %s", e)
         raise HTTPException(status_code=500, detail=str(e))
     finally:
-        put_conn(conn)
+        put_write_conn(conn)
 
 @router.delete("/unfollow/{followed_id}")
 def unfollow_user(
@@ -371,7 +371,7 @@ def unfollow_user(
     current_user: dict = Depends(get_current_user)
 ):
     """Unfollow a user"""
-    conn = get_conn()
+    conn = get_write_conn()
     try:
         with conn.cursor(cursor_factory=RealDictCursor) as cur:
             cur.execute("""
@@ -393,11 +393,11 @@ def unfollow_user(
     except HTTPException:
         raise
     except Exception as e:
-        conn.rollback()
+        safe_rollback(conn)
         logger.exception("Error unfollowing user: %s", e)
         raise HTTPException(status_code=500, detail=str(e))
     finally:
-        put_conn(conn)
+        put_write_conn(conn)
 
 @router.get("/followers", response_model=List[UserFollowResponse])
 def get_user_followers(
@@ -406,7 +406,7 @@ def get_user_followers(
     offset: int = Query(0, ge=0)
 ):
     """Get current user's followers"""
-    conn = get_conn()
+    conn = get_read_conn()
     try:
         with conn.cursor(cursor_factory=RealDictCursor) as cur:
             cur.execute("""
@@ -428,7 +428,7 @@ def get_user_followers(
         logger.exception("Error getting followers: %s", e)
         raise HTTPException(status_code=500, detail=str(e))
     finally:
-        put_conn(conn)
+        put_read_conn(conn)
 
 @router.get("/following", response_model=List[UserFollowResponse])
 def get_user_following(
@@ -437,7 +437,7 @@ def get_user_following(
     offset: int = Query(0, ge=0)
 ):
     """Get users that current user is following"""
-    conn = get_conn()
+    conn = get_read_conn()
     try:
         with conn.cursor(cursor_factory=RealDictCursor) as cur:
             cur.execute("""
@@ -459,7 +459,7 @@ def get_user_following(
         logger.exception("Error getting following: %s", e)
         raise HTTPException(status_code=500, detail=str(e))
     finally:
-        put_conn(conn)
+        put_read_conn(conn)
 
 # Admin routes
 @router.get("/", response_model=List[UserResponse])
@@ -469,7 +469,7 @@ def list_all_users(
     offset: int = Query(0, ge=0)
 ):
     """List all users (admin only)"""
-    conn = get_conn()
+    conn = get_read_conn()
     try:
         with conn.cursor(cursor_factory=RealDictCursor) as cur:
             cur.execute("""
@@ -484,7 +484,7 @@ def list_all_users(
         logger.exception("Error listing users: %s", e)
         raise HTTPException(status_code=500, detail=str(e))
     finally:
-        put_conn(conn)
+        put_read_conn(conn)
 
 class RoleUpdateRequest(BaseModel):
     role: str
@@ -512,7 +512,7 @@ def update_user_role(
             detail=f"Invalid role. Must be one of: {', '.join(valid_roles)}"
         )
     
-    conn = get_conn()
+    conn = get_write_conn()
     try:
         with conn.cursor(cursor_factory=RealDictCursor) as cur:
             logger.info(f"Updating user {user_id} role to {role}")
@@ -544,14 +544,14 @@ def update_user_role(
             return updated_user
             
     except HTTPException:
-        conn.rollback()
+        safe_rollback(conn)
         raise
     except Exception as e:
-        conn.rollback()
+        safe_rollback(conn)
         logger.exception("Error updating user role: %s", e)
         raise HTTPException(status_code=500, detail=f"Failed to update user role: {str(e)}")
     finally:
-        put_conn(conn)
+        put_write_conn(conn)
 
 @router.delete("/{user_id}")
 def delete_user(
@@ -565,7 +565,7 @@ def delete_user(
             detail="Cannot delete yourself"
         )
     
-    conn = get_conn()
+    conn = get_write_conn()
     try:
         with conn.cursor(cursor_factory=RealDictCursor) as cur:
             cur.execute("DELETE FROM users WHERE id = %s RETURNING id", (user_id,))
@@ -583,8 +583,8 @@ def delete_user(
     except HTTPException:
         raise
     except Exception as e:
-        conn.rollback()
+        safe_rollback(conn)
         logger.exception("Error deleting user: %s", e)
         raise HTTPException(status_code=500, detail=str(e))
     finally:
-        put_conn(conn)
+        put_write_conn(conn)
